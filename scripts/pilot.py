@@ -10,6 +10,13 @@ next pilot runs. After three pilots without a freeze, the pilot whose m is close
 Only beta0 changes; beta1, beta2 and sigma_eps are written unchanged. The SD of bid/EST is printed against
 B&Y Table 5 (all bids 1.0819 / 0.1837; winning bids 1.0031 / 0.1573, secondary) and never targeted.
 
+K scale (controller ruling D1): a pilot season is 20 projects, so with the experiment's k_frac (0.25 of
+the season's total EST) CAP would grow about 5.5 times faster per project than in the 110-project
+experiment and bias the frozen beta0 low. The pilot runs at k_frac = 0.25 x 110 / 20 = 1.375
+(``pilot_k_frac``), so CAP grows per project as in the experiment. The value is recorded in the ``pilot``
+section and in every ``pilot_history`` entry of ``frozen.json``; frozen.json's cost keys are unchanged
+and the experiment keeps k_frac 0.25.
+
 Writes ``<config-dir>/frozen.json`` (read by the launcher and ``cover_smoke.py --phase postfreeze``), the
 ``pilot`` section of ``<results-dir>/calibration.json`` (after every pilot) and one line in the decisions
 log. Runs go under ``<results-dir>/calibration_runs/`` (``purpose = "pilot"``).
@@ -53,6 +60,12 @@ def _safe_print(text: str, file) -> None:
         print(text.encode("ascii", "backslashreplace").decode("ascii"), file=file, flush=True)
 
 
+def pilot_k_frac(base_k_frac: float, experiment_T: int, pilot_T: int = T) -> float:
+    """The pilot's k_frac: the experiment's scaled by experiment_T / pilot_T (D1), so that CAP = won / K
+    grows per project at the experiment's rate (K = k_frac x season total EST)."""
+    return float(base_k_frac) * int(experiment_T) / int(pilot_T)
+
+
 def _f(x, fmt=".4f") -> str:
     return "n/a" if x is None or (isinstance(x, float) and not math.isfinite(x)) else format(x, fmt)
 
@@ -87,14 +100,18 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
         print(f"{PROG}: refusing to run: {exc}", file=sys.stderr)
         return calibration.EXIT_REFUSE
 
+    k_frac = pilot_k_frac(base.k_frac, int(defaults["T"]))
+
     def pilot_config(beta0: float):
         return calibration.run_config(defaults, condition="control", seed=1, T=T, burn_in=BURN_IN, bidder="llm",
-                                      cost=replace(base, beta0=beta0))
+                                      cost=replace(base, beta0=beta0, k_frac=k_frac))
 
     per_pilot = launcher.planned_calls([pilot_config(base.beta0)])
     print(calibration.estimate_line(PROG, pl.MAX_PILOTS * per_pilot, pricing,
                                     f"at most {pl.MAX_PILOTS} pilots x {per_pilot}: control, seed 1, T={T}, "
                                     f"burn-in {BURN_IN}; start beta0 {base.beta0:g}"), flush=True)
+    print(f"{PROG}: k_frac {k_frac:g} = {base.k_frac:g} x {defaults['T']} / {T} (CAP grows per project as in the "
+          f"{defaults['T']}-project experiment; the experiment keeps k_frac {base.k_frac:g})", flush=True)
 
     history: list[dict] = []
     spend: list[dict] = []
@@ -107,6 +124,7 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
                "band": list(pl.BAND), "target": pl.TARGET, "stop_band": list(pl.STOP_BAND),
                "comparators": {"all_bids": pl.COMPARATOR_ALL, "winning_bids": pl.COMPARATOR_WINNING,
                                "source": "B&Y Table 5, p. 980"},
+               "k_frac": k_frac, "experiment_k_frac": base.k_frac,
                "cost_usd": sum(s["cost_usd"] for s in spend), **(extra or {}), "history": prior}
         calibration.update_calibration(cal_path, "pilot", sec)
 
@@ -126,7 +144,7 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
         stats = calibration.call_stats(run_dir, pricing)
         entry = {"beta0": beta0, "m": s["mean_bid_over_est"], "sd": s["sd_bid_over_est"],
                  "winning_mean": s["winning_mean"], "winning_sd": s["winning_sd"],
-                 "parse_rate": s["parse_rate"], "run_dir": str(run_dir)}
+                 "parse_rate": s["parse_rate"], "k_frac": k_frac, "run_dir": str(run_dir)}
         history.append(entry)
         spend.append({"run_dir": str(run_dir), "failure_reasons": calibration.failure_reasons(run_dir, "bid"),
                       **stats})

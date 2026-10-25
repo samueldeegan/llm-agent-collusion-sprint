@@ -515,7 +515,7 @@ def test_defaults_reach_run_meta(tmp_path, key, monkeypatch, capsys):
     from src.procurement import config
     real = config.load_defaults()
     changed = {**real, "memory_window": 7, "history_window": 15, "max_tokens": 6000, "concurrency": 3,
-               "max_message_length": 300}
+               "max_message_length": 300, "model": "claude-test-model"}
     monkeypatch.setattr(config, "load_defaults", lambda *a, **k: changed)
     for name, args in (("smoke_llm", []),
                        ("cover_smoke", ["--phase", "prefreeze", "--config-dir", str(tmp_path), "--skip-scripted"]),
@@ -528,6 +528,7 @@ def test_defaults_reach_run_meta(tmp_path, key, monkeypatch, capsys):
         meta = io.read_run_meta(d)
         assert meta["windows"] == {"history": 15, "memory": 7}, d
         assert meta["max_tokens"] == 6000 and meta["concurrency"] == 3
+        assert meta["model"] == "claude-test-model" and meta["max_message_length"] == 300
     out = capsys.readouterr().out
     assert out.count("a-priori cost $") >= 3
 
@@ -644,3 +645,78 @@ def test_tier_check_retry_then_success(tmp_path, key, capsys):
     mod = _no_sleep(load_script("tier_check"))
     assert mod.main(["--results-dir", str(tmp_path)], transport=fake) == 0
     assert len(fake.requests) == 2 and _cal(tmp_path)["limits"]["1"]["requests"] == 4000
+
+
+# ------------------------------------------------------------------ final review fix wave
+
+def test_unreadable_calibration_file_refused(tmp_path, key, capsys):
+    """A3: a calibration.json that cannot be read (here a directory) is refused like invalid JSON: the
+    pilot and --note-skip-postfreeze exit 5 before any call."""
+    from src.procurement import calibration
+    (tmp_path / "calibration.json").mkdir()
+    with pytest.raises(ValueError, match="cannot be read"):
+        calibration.read_calibration_file(tmp_path / "calibration.json")
+    mod = load_script("pilot")
+
+    def no_run(*a, **k):
+        raise AssertionError("no run may start")
+    assert mod.main(_pilot_args(tmp_path), bidder_factory=no_run) == 5
+    assert "cannot be read" in capsys.readouterr().err
+    smoke = load_script("cover_smoke")
+    assert smoke.main(["--note-skip-postfreeze", "--results-dir", str(tmp_path)]) == 5
+    assert "cannot be read" in capsys.readouterr().err
+    assert not _run_dirs(tmp_path)
+
+
+def test_pilot_k_scaled_to_experiment_cap_growth(tmp_path, key, monkeypatch, capsys):
+    """D1: the pilot runs at k_frac = 0.25 x 110 / 20 = 1.375 (CAP grows per project as in the
+    experiment), recorded in the pilot section and frozen.json's pilot_history; frozen.json's cost keys
+    are unchanged and the experiment's k_frac stays 0.25."""
+    from src.procurement.environment import generate_environment
+    _fake_summary(monkeypatch, mean_bid_over_est=1.05)
+    mod = load_script("pilot")
+    assert mod.pilot_k_frac(0.25, 110, 20) == 1.375
+    assert mod.main(_pilot_args(tmp_path), bidder_factory=synthetic_bidder_factory) == 0
+    (d,) = _run_dirs(tmp_path)
+    meta = io.read_run_meta(d)
+    env = generate_environment(1, _frozen_cost(0.90), 20)
+    assert meta["cost"]["K"] == pytest.approx(1.375 * env.season_total)
+    assert meta["cost"]["K"] == pytest.approx(0.25 * 110 / 20 * meta["cost"]["season_total_est"])
+    sec = _cal(tmp_path)["pilot"]
+    assert sec["k_frac"] == 1.375 and sec["experiment_k_frac"] == 0.25
+    assert sec["pilots"][0]["k_frac"] == 1.375
+    data = _frozen_text(tmp_path)
+    assert data["pilot_history"][0]["k_frac"] == 1.375
+    assert set(data["cost"]) == {"beta0", "beta1", "beta2", "sigma_eps"}
+    assert launcher.read_frozen(tmp_path / "frozen.json", _frozen_cost(0.5)).k_frac == 0.25
+    assert "k_frac 1.375" in capsys.readouterr().out
+
+
+def test_cover_smoke_insufficient_rule_warns_without_stop(tmp_path, key, monkeypatch, capsys):
+    """D2: a prefreeze realized rule of "insufficient" prints a WARNING recommending one rerun, records
+    rule_insufficient true, and neither stops nor exits 3."""
+    monkeypatch.setattr(fidelity, "realized_rule",
+                        lambda *a, **k: dict(label="insufficient", b_own=float("nan"), b_partner=float("nan"),
+                                             n_cover=4))
+    mod = load_script("cover_smoke")
+    code = mod.main(["--phase", "prefreeze", "--results-dir", str(tmp_path), "--config-dir", str(tmp_path),
+                     "--skip-scripted"], bidder_factory=synthetic_bidder_factory)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "WARNING" in out and "rerun this prefreeze smoke once" in out and "STOP" not in out
+    sec = _cal(tmp_path)["cover_smoke_prefreeze"]
+    assert sec["rule_insufficient"] is True and sec["stop"] is None
+    monkeypatch.undo()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", SECRET)
+    assert mod.main(["--phase", "prefreeze", "--results-dir", str(tmp_path), "--config-dir", str(tmp_path),
+                     "--skip-scripted"], bidder_factory=synthetic_bidder_factory) == 0
+    assert _cal(tmp_path)["cover_smoke_prefreeze"]["rule_insufficient"] is False
+    assert "WARNING" not in capsys.readouterr().out
+
+
+def test_operator_docs_current():
+    """C7: the README spend line names the projected branch; cover_smoke's docstring no longer claims
+    postfreeze always exits 0."""
+    readme = " ".join((REPO / "src" / "procurement" / "README.md").read_text(encoding="utf-8").split())
+    assert "projected spend does after 200 calls" in readme
+    assert "postfreeze always" not in load_script("cover_smoke").__doc__

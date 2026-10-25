@@ -21,10 +21,15 @@ writes ``cover_smoke_postfreeze = {"skipped": true, "reason": "time ladder", "us
 "cover_smoke_prefreeze"}`` and exits 0; it refuses (exit 5) when there is no prefreeze record or when a
 real postfreeze measurement already exists.
 
-Exit codes: 0 done (postfreeze always, warnings printed); 1 the scripted step failed without a stop (the
-run's numbers are recorded; rerun ``python -m src.procurement.scripted``); 3 STOP, prefreeze only:
-realized rule "shadow" or fidelity < 0.5 (written to calibration.json and printed before the scripted
-step, and exit 3 whatever that step does); 5 key not set or rejected, or (postfreeze) no
+A realized rule of "insufficient" (fewer than 10 cover projects with both bids) is not a stop: the
+section records ``rule_insufficient: true`` and, in the prefreeze phase, a WARNING recommends one rerun
+(controller ruling D2: the shadow stop check needs a realized rule).
+
+Exit codes: 0 done (postfreeze: also on shadow or low fidelity, which print a WARNING; prefreeze: also on
+an "insufficient" rule); 1 the scripted step failed without a stop (the run's numbers are recorded; rerun
+``python -m src.procurement.scripted``), either phase; 3 STOP, prefreeze only: realized rule "shadow" or
+fidelity < 0.5 (written to calibration.json and printed before the scripted step, and exit 3 whatever that
+step does); 5 key not set or rejected, an unreadable calibration.json, or (postfreeze) no usable
 ``config/frozen.json``. The key is read from the environment and never printed or written."""
 from __future__ import annotations
 
@@ -194,6 +199,7 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
         "failure_reasons": calibration.failure_reasons(run_dir, "bid"),
         "message_failure_reasons": calibration.failure_reasons(run_dir, "message"),
         **stats,
+        "rule_insufficient": rule["label"] == "insufficient",
         "stop": stop, "warning": warning, "scripted_signatures": None, "scripted_seeds": None,
         "scripted_extra_margin": extra, "scripted_error": None, "history": history,
     }
@@ -216,6 +222,10 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
     calibration.print_call_stats(stats, PROG)
     print(f"{PROG}: wrote {section_name} and measured to {cal_path}", flush=True)
 
+    if args.phase == "prefreeze" and rule["label"] == "insufficient":
+        print(f"{PROG}: WARNING: realized rule 'insufficient' ({section['n_cover']} cover projects with both bids, "
+              f"{RULE_MIN_PROJECTS} needed): the shadow stop check could not be made. Recommended: rerun this "
+              f"prefreeze smoke once (recorded as rule_insufficient in {section_name}); not a stop.", flush=True)
     if stop:  # reported now, so a failure in the (offline) scripted step cannot hide it
         print(f"{PROG}: STOP ({STOP_REF}): {stop}. Recorded in {cal_path} [{section_name}]. "
               "Do not run the pilot; the design cannot run as specified.", flush=True)

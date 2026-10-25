@@ -32,7 +32,7 @@ and a scripted instruction (cover, markup, rotation); the control has none. A re
 
     .venv\Scripts\python.exe -m pytest tests -q
 
-About 415 tests, roughly 196 s. The suite makes zero API calls: the client transport is injected, and
+About 443 tests, roughly 220 s. The suite makes zero API calls: the client transport is injected, and
 no test constructs a real SDK client. `pytest.ini` defines a `slow` marker for the long known-answer
 tests; they run by default. Skip them with `-m "not slow"`, run only them with `-m slow`.
 
@@ -49,13 +49,18 @@ Keys are read from the environment only. Step order matters.
    Other flags: `--results-dir`, `--config-dir`, `--seeds 100`, `--skip-scripted`.
    Writes a run under `results/calibration_runs/`, `cover_smoke_prefreeze` and `measured` in
    `calibration.json`, and (unless `--skip-scripted`) `results/analysis/<UTC>/scripted_signatures.csv`.
-   Exit 0: proceed (an "insufficient" rule is a finding, not a stop). 1: the scripted-signatures
-   step failed; the run's numbers are already recorded, so rerun the offline command the script prints,
+   Exit 0: proceed. A realized rule of "insufficient" (fewer than 10 cover projects with both bids) is
+   not a stop: it prints a WARNING recommending one rerun of this step (the shadow check needs a realized
+   rule) and records `rule_insufficient: true`. 1: the scripted-signatures step failed; the run's
+   numbers are already recorded, so rerun the offline command the script prints,
    `python -m src.procurement.scripted --seeds N [--extra-margin X]`. 3: STOP, realized rule is shadow
-   or fidelity < 0.5; do not run the pilot (3 wins even if the scripted step also failed). 5: key problem.
+   or fidelity < 0.5; do not run the pilot (3 wins even if the scripted step also failed). 5: key problem
+   or an unreadable `calibration.json`.
 3. Pilot (120 calls per pilot, at most 3 pilots, at most 360): `.venv\Scripts\python.exe scripts\pilot.py`
    Flags: `--results-dir`, `--config-dir`, `--decisions`. Loops on beta0 until the mean bid/EST of
-   projects 11-20 is in [1.00, 1.10]. Writes `config/frozen.json`, appends a line to
+   projects 11-20 is in [1.00, 1.10]. The pilot runs at k_frac = 0.25 x 110 / 20 = 1.375 so that CAP
+   grows per project as in the 110-project experiment (recorded as `k_frac` in the `pilot` section and in
+   `frozen.json`'s `pilot_history`; the experiment keeps 0.25). Writes `config/frozen.json`, appends a line to
    `docs/superpowers/DECISIONS.md`, writes the `pilot` section. Exit 0: frozen. 3: STOP (parse rate
    < 0.95, or frozen m outside [0.95, 1.15]; no `frozen.json`). 5: bad key, `frozen.json` exists, or
    `calibration.json` is unreadable.
@@ -86,11 +91,26 @@ Then real:
 
 Other flags: `--allow-unfrozen` (tests and dry runs only), `--poll-s 60`, `--results-root results/runs`,
 `--frozen config/frozen.json`, `--calibration`, `--decisions`, `--bidder llm|synthetic`,
-`--stagger-s 5`, `--rerun-finished`. A (condition, seed) with a finished matching run is skipped unless
-`--rerun-finished`. Run the launcher from a dedicated console, not inside a background task that can be
-killed. Exit codes: 0 all runs done; 2 spend stop (total spend across all launches reaches $75); 5 pre-flight refusal (no `frozen.json`, unusable
-`calibration.json`, key not set) or a fatal API error; 6 all runs terminal but not all done; 7 time
-ladder stop (see below).
+`--stagger-s 5`, `--rerun-finished`, `--ignore-live`. A real launch into `results/runs` refuses
+`--bidder synthetic` and `--allow-unfrozen` (exit 5); use another `--results-root` for those. Every run
+takes model, max_tokens, burn-in, N, windows, message cap and concurrency from `config/defaults.json`,
+the cost parameters from `config/frozen.json` over the defaults, and T from the plan. With tier-check
+limits in `calibration.json`, R per condition is the smaller of the plan's R and the sizing rule's
+(both are logged).
+
+Relaunching after a crash or stop: a (condition, seed) with a finished matching run is skipped unless
+`--rerun-finished`. One with an unfinished matching run whose heartbeat shows activity within the last
+600 s (`stall_s`) refuses the whole launch (exit 5, naming the runs; probably still running; a dry run only warns) unless
+`--ignore-live`. Otherwise it resumes from the latest unfinished checkpointed directory
+(`--resume-dir`; this uses the run's one restart), or starts fresh when there is no checkpoint. When
+runs of the plan already exist, T stays at their T whatever the time ladder says (logged as "T kept
+at ...").
+
+Run the launcher from a dedicated console, not inside a background task that can be killed. Exit
+codes: 0 all runs done; 2 spend stop (stops when actual spend exceeds $75, or projected spend does after
+200 calls; both count every launch); 5 pre-flight refusal (no `frozen.json`, unusable or invalid
+`calibration.json`, key not set, synthetic or unfrozen into `results/runs`, a live unfinished run) or a
+fatal API error; 6 all runs terminal but not all done; 7 time ladder stop (see below).
 
 Time ladder: the deadline is `deadline_utc` in `config/run_plan.json` (2026-10-26 11:59 UTC). If nothing
 is launched yet, the plan is cut by hours left: 5 h or less drops rotation; 4 h: T 80 and markup R 2;
@@ -98,7 +118,8 @@ is launched yet, the plan is cut by hours left: 5 h or less drops rotation; 4 h:
 
 A run stops (runner exit 3) when a file named `STOP` appears in its run directory. The launcher does
 this to every child on a spend stop, fatal error, failure or interrupt, and records the reason in
-`results/STOP.json` (for example `launcher_error`, `interrupted`).
+`results/STOP.json` (for example `launcher_error`, `interrupted`). A `STOP` that appears during the last
+project does not stop the run: its table is complete, so it finishes (exit 0, `finished_utc` set).
 
 ## Analysis
 
@@ -106,7 +127,18 @@ this to every child on a spend stop, fatal error, failure or interrupt, and reco
 
 Runs evaluation, then writes the tables, figure and `README.md` into a new `results/analysis/<UTC>/`
 (or `--out`). The same `README.md` is also written to `results/README.md`, in the parent of
-`--results-root`. The detector alone: `python -m src.procurement.detector --run-dir DIR`. Scripted rows:
+`--results-root`. Relative paths (here and in `python -m src.procurement.evaluation` and `scripted`)
+resolve against the repository root. Evaluation takes LLM runs only (`--include-synthetic` adds the
+others; tests), and, when `config/frozen.json` and `config/run_plan.json` exist (`--frozen`, `--plan`),
+only runs at the frozen cost and the plan's T (or the ladder's 80). Every directory not used is listed
+in `excluded_runs.json` and the README with the reason (another bidder, cost or T; no or unreadable
+`run_meta.json`, no `bids.csv`; superseded). A run with no completed project is listed with 0 projects
+and kept out of the tables. The README's run inventory also lists the planned runs with no directory
+(STOP.json `runs_not_started`, plan rows never launched); an unreadable `STOP.json` or
+`calibration.json` is named under "Not computed". Evaluation never writes into a run directory: a run's
+`detector/pair_stats.csv` is used only when it is newer than `bids.csv` and matches its row count,
+otherwise the detector runs in memory. The detector alone: `python -m src.procurement.detector --run-dir
+DIR` (on an unfinished run it computes in memory and writes nothing). Scripted rows:
 `python -m src.procurement.scripted --seeds 100`.
 
 ## Where outputs land
