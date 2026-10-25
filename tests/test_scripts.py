@@ -201,6 +201,14 @@ def test_arm_smoke_reports_prompt_violation_and_exits_1(tmp_path, key, monkeypat
     assert "PROMPT CHECK FAILED" in capsys.readouterr().out
 
 
+def test_arm_smoke_corrupt_calibration_fails_before_run(tmp_path, key):
+    (tmp_path / "calibration.json").write_text("{not json", encoding="utf-8")
+    mod = load_script("arm_smoke")
+    assert mod.main(["--arm", "mem0", "--results-dir", str(tmp_path)],
+                    bidder_factory=stub_factory(StubClient())) == 1
+    assert not _run_dirs(tmp_path)
+
+
 def test_arm_smoke_refuses_without_key(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY_2", raising=False)
@@ -243,6 +251,19 @@ def test_hidden_prompt_checks_pass_on_clean_text():
     assert check_prompt_text(_hidden_prompt(cfg), cfg) == []
 
 
+def test_hidden_prompt_ignores_harmless_numbers_and_flags_shown_text():
+    from src.procurement.prompt_sections import _shown_cost_section, check_prompt_text
+    cfg = _hidden_cfg()
+    assert check_prompt_text(_hidden_prompt(cfg, " CAP 0.170 and a bid +0.08 above, 0.17, 0.08"), cfg) == []
+    shown = _shown_cost_section(cfg)
+    formula = next(ln for ln in shown.splitlines() if ln.startswith("cost = EST * ("))
+    bad = check_prompt_text(_hidden_prompt(cfg, chr(10) + formula), cfg)
+    assert len(bad) == 1 and "formula" in bad[0]
+    clause = shown.split("The tag effect depends on the project type: ", 1)[1].splitlines()[0]
+    bad = check_prompt_text(_hidden_prompt(cfg, chr(10) + "The tag effect depends on the project type: " + clause), cfg)
+    assert len(bad) == 1 and "tag-effect" in bad[0]
+
+
 def test_hidden_prompt_checks_detect_violations():
     from src.procurement.environment import generate_environment
     from src.procurement.prompt_sections import check_prompt_text
@@ -253,7 +274,7 @@ def test_hidden_prompt_checks_detect_violations():
     bad = check_prompt_text(_hidden_prompt(cfg, f"\nrival {env.eta[1]:+.4f}\nFirm rate"), cfg)
     assert any("rival seat 1" in b for b in bad) and any("'Firm rate'" in b for b in bad)
     bad = check_prompt_text(_hidden_prompt(cfg, f"\ncost = {cfg.cost.beta0!r} * EST"), cfg)
-    assert any("beta0" in b for b in bad)
+    assert bad == []  # a bare coefficient is not flagged; the shown formula line is (see the test above)
     bad = check_prompt_text(_hidden_prompt(cfg).split(chr(10) + "Your firm rate")[0], cfg)
     assert any("own firm rate" in b for b in bad)
 

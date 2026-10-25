@@ -64,6 +64,11 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
     pricing = calibration.pricing_from_defaults(defaults)
     results_dir = calibration.repo_path(args.results_dir)
     cal_path = results_dir / "calibration.json"
+    try:
+        calibration.read_calibration_file(cal_path)  # a corrupt file fails before any call is spent
+    except ValueError as exc:
+        print(f"{PROG}: FAIL: {exc}", file=sys.stderr)
+        return calibration.EXIT_FAIL
     factory = calibration.choose_factory(cfg, bidder_factory, transport)
 
     print(calibration.estimate_line(PROG, launcher.planned_calls([cfg]), pricing,

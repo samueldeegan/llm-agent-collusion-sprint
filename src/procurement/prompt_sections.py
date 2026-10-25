@@ -47,6 +47,14 @@ def _bid_prompt_text(run_dir, firm: str, project_id: int) -> str | None:
     return text[start + 7:end]
 
 
+def _shown_cost_section(cfg: RunConfig) -> str:
+    """The cost section the shown prompt renders for ``cfg`` (what a hidden prompt must not contain)."""
+    from dataclasses import replace
+
+    from src.procurement import render
+    return render._cost_section(replace(cfg, bidder_info="shown"))
+
+
 def check_prompt_text(text: str, cfg: RunConfig, seat: int = 0, project_id: int = 2) -> list[str]:
     """Violated assertions (empty = pass) of one logged bid prompt ``[system]\n...\n\n[user]\n...``."""
     if not text.startswith("[system]\n") or "\n\n[user]\n" not in text:
@@ -65,16 +73,21 @@ def check_prompt_text(text: str, cfg: RunConfig, seat: int = 0, project_id: int 
     if cfg.bidder_info == "hidden":
         from src.procurement.environment import generate_environment
         env = generate_environment(cfg.seed, cfg.cost, cfg.T, cfg.N)
-        for name in ("beta0", "beta1", "beta2"):
-            tok = repr(getattr(cfg.cost, name))
-            if re.search(rf"(?<![\d.]){re.escape(tok)}(?!\d)", text):
-                out.append(f"hidden: cost coefficient {name} ({tok}) appears in the prompt")
+        shown = _shown_cost_section(cfg)
+        formula = next((ln for ln in shown.splitlines() if ln.startswith("cost = EST * (")), None)
+        if formula and formula in text:
+            out.append("hidden: the shown cost formula line (beta0/beta1/beta2) appears in the prompt")
+        marker = "The tag effect depends on the project type: "
+        if marker in shown:
+            clause = shown.split(marker, 1)[1].splitlines()[0]
+            if clause and clause in text:
+                out.append("hidden: the shown tag-effect clause (nu levels) appears in the prompt")
         if "built the same way" in text:
             out.append("hidden: 'built the same way' appears in the prompt")
         own = f"{env.eta[seat]:+.4f}"
         for i in range(cfg.N):
             tok = f"{env.eta[i]:+.4f}"
-            if i != seat and tok != own and tok in text:
+            if i != seat and tok != own and re.search(rf"(?<![\d.]){re.escape(tok)}(?!\d)", text):
                 out.append(f"hidden: rival seat {i}'s firm rate {tok} appears in the prompt")
         if own not in text:
             out.append(f"hidden: own firm rate {own} is missing from the prompt")
