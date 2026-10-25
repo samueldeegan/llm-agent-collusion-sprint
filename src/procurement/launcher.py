@@ -204,6 +204,9 @@ def _copied_upto(run_dir: Path) -> int:
         return 0
 
 
+_TOKEN_COLUMNS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
 def spend_totals(run_dirs, pricing: Pricing) -> tuple[float, int]:
     """(USD, calls) over every ``calls.csv``: all four token columns priced, a call counted by its
     attempt-1 row. Torn or unparsable rows (a file being appended) are skipped."""
@@ -220,14 +223,15 @@ def spend_totals(run_dirs, pricing: Pricing) -> tuple[float, int]:
             if not header:
                 continue
             col = {c: i for i, c in enumerate(header)}
+            if not set(_TOKEN_COLUMNS) | {"project_id", "attempt"} <= set(col):
+                continue
             for row in reader:
                 if len(row) != len(header):
                     continue
                 pid = _int(row[col["project_id"]])
                 if pid is None or pid <= skip:
                     continue
-                tok = [_int(row[col[c]]) or 0 for c in ("input_tokens", "output_tokens",
-                                                       "cache_creation_input_tokens", "cache_read_input_tokens")]
+                tok = [_int(row[col[c]]) or 0 for c in _TOKEN_COLUMNS]
                 usd += pricing.cost_usd(*tok)
                 calls += _int(row[col["attempt"]]) == 1
     return usd, calls
@@ -542,9 +546,11 @@ class Launcher:
         for r in self.runs:
             for d in r.run_dirs:
                 if not (r.alive and d == r.current_dir):
-                    procs.append(None), dirs.append(d)
+                    procs.append(None)
+                    dirs.append(d)
             if r.alive:
-                procs.append(r.proc), dirs.append(r.current_dir)
+                procs.append(r.proc)
+                dirs.append(r.current_dir)
         self.log(f"stop all runs: {reason} (actual ${self.actual:.2f}, projected ${self.projected:.2f})")
         stop_all(procs, dirs, self.results_root, reason, self.actual, self.projected, self.clock, self.sleep)
         for r in self.runs:
