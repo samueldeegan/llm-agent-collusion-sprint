@@ -34,6 +34,7 @@ class BidResult:
     parsed: dict | None
     raw: str | None
     call_records: list[dict]
+    prompt: str | None = None  # the prompt sent, "[system]\n...\n\n[user]\n..."; None on the synthetic path
 
 
 @dataclass
@@ -44,6 +45,7 @@ class MessageResult:
     reason: str
     raw: str | None
     call_records: list[dict]
+    prompt: str | None = None  # as BidResult.prompt
 
 
 class Bidder(Protocol):

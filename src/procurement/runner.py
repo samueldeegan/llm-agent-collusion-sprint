@@ -21,6 +21,7 @@ from src.procurement import config
 from src.procurement.config import RunConfig
 from src.procurement.environment import Environment, cost_of, generate_environment
 from src.procurement.rules import cover_roles, rotation_roles
+from src.procurement.synthetic import synthetic_bidder_factory
 from src.procurement.types import BidContext, Bidder, BidResult, MessageResult
 
 BidderFactory = Callable[[RunConfig, Environment], Bidder]
@@ -58,6 +59,16 @@ def resolve_cartel_seats(cfg: RunConfig) -> tuple[int, int] | None:
 def scheme_of(cfg: RunConfig) -> str:
     """The ``scheme`` value of run_meta and truth.csv: "none" for control, else the condition."""
     return "none" if cfg.condition == "control" else cfg.condition
+
+
+def bidder_factory_for(cfg: RunConfig) -> BidderFactory:
+    """The bidder factory ``cfg.bidder`` names: "synthetic" or "llm"."""
+    if cfg.bidder == "synthetic":
+        return synthetic_bidder_factory
+    if cfg.bidder == "llm":
+        from src.procurement.llm_bidder import llm_bidder_factory  # imports this module
+        return llm_bidder_factory
+    raise ValueError(f"unknown bidder {cfg.bidder!r}; expected 'synthetic' or 'llm'")
 
 
 def make_run_meta(cfg: RunConfig, env: Environment, limits: dict | None = None,
@@ -118,6 +129,18 @@ def _check_state_hook(bidder: Bidder) -> None:
     has_set = callable(getattr(bidder, "set_state", None))
     if has_get != has_set:
         raise TypeError(f"{type(bidder).__name__} defines only one of get_state/set_state; define both or neither")
+
+
+def _transcript(seat: int, phase: str, posting: str, result: BidResult | MessageResult
+                ) -> tuple[int, str, str, str] | None:
+    """A transcript entry for one call: the prompt the bidder sent (``result.prompt``; the posting when
+    a bidder reports none) and its raw reply. Nothing when neither a prompt nor a reply exists (the
+    synthetic bidder); a sent prompt with no reply records why it is missing."""
+    if result.prompt is None and result.raw is None:
+        return None
+    prompt = posting if result.prompt is None else result.prompt
+    raw = result.raw if result.raw is not None else f"(no response: {result.reason or 'missing'})"
+    return seat, phase, prompt, raw
 
 
 def _call_rows(run_id: str, project_id: int, firm_id: str, phase: str, records: list[dict]) -> list[dict]:
@@ -323,8 +346,9 @@ class _Loop:
                                  "recipient": env.names[r["recipient"]]})
             res = msg_results[sender]
             call_rows += _call_rows(self.run_id, pid, env.names[sender], "message", res.call_records)
-            if res.raw is not None:
-                transcripts.append((sender, "message", posting, res.raw))
+            entry = _transcript(sender, "message", posting, res)
+            if entry is not None:
+                transcripts.append(entry)
 
         roles = self._truth_roles(pid, costs)
         bid_rows, truth_rows = [], []
@@ -339,8 +363,9 @@ class _Loop:
                                "is_cartel": int(self.seats is not None and i in self.seats),
                                "cartel_role": roles[i], "scheme": scheme_of(cfg)})
             call_rows += _call_rows(self.run_id, pid, firm, "bid", results[i].call_records)
-            if results[i].raw is not None:
-                transcripts.append((i, "bid", posting, results[i].raw))
+            entry = _transcript(i, "bid", posting, results[i])
+            if entry is not None:
+                transcripts.append(entry)
 
         self.history.append({
             "project_id": pid, "est": est, "tag": env.tag_label[t],
