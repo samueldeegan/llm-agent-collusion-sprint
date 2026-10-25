@@ -7,7 +7,7 @@ import pytest
 
 from src.procurement import client as client_mod
 from src.procurement.client import (FatalAPIError, HaikuClient, RawResponse, TransportError,
-                                    map_sdk_error, parse_bid, parse_message, with_content_reason)
+                                    map_sdk_error, response_from_json, parse_bid, parse_message, with_content_reason)
 from src.procurement.io import CALLS_COLUMNS
 
 ID_COLUMNS = {"run_id", "project_id", "firm_id", "phase"}
@@ -453,3 +453,167 @@ def test_key_never_in_records_or_repr(monkeypatch):
     assert SENTINEL not in json.dumps(ei.value.records) and SENTINEL not in repr(c)
     te = client_mod._scrub(TransportError("server", 500, None, f"x {SENTINEL}"), SENTINEL)
     assert SENTINEL not in te.message and SENTINEL not in repr(te)
+
+
+# ---------------------------------------------------------------- hardening round
+
+class _FakeRawBody:
+    def __init__(self, content=None, json_body=None, headers=None):
+        kw = {"content": content} if content is not None else {"json": json_body}
+        self.http_response = httpx.Response(200, request=httpx.Request("POST", "https://x"), **kw)
+        self.headers = headers or {}
+
+
+@pytest.mark.parametrize("make", [
+    lambda: _FakeRawBody(content=b"<html>gateway page SECRETBODY</html>"),
+    lambda: _FakeRawBody(content=b""),
+    lambda: _FakeRawBody(json_body=[1, 2]),
+    lambda: _FakeRawBody(json_body="text"),
+    lambda: _FakeRawBody(json_body=None),
+])
+def test_malformed_200_body_is_retried_as_server_error(monkeypatch, make):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", SENTINEL)
+    n = []
+
+    def behaviour(kw):
+        n.append(1)
+        return make() if len(n) == 1 else _FakeRaw(_api_json('{"bid": 4}'), {})
+
+    _install_fake_sdk(monkeypatch, behaviour)
+    ft = FakeTime()
+    c = HaikuClient("claude-haiku-5-5", 8000, clock=ft.clock, sleep=ft.sleep, jitter_seed=0)
+    with pytest.raises(TransportError) as ei:
+        c._transport(c.request_kwargs("S", "U"))
+    assert ei.value.kind == "server" and ei.value.status is None
+    assert "SECRETBODY" not in ei.value.message and "SECRETBODY" not in str(ei.value)
+    n.clear()
+    resp, recs = c.create("S", "U")
+    assert parse_bid(resp)[:2] == (4.0, "")
+    assert [r["reason"] for r in recs] == ["server_error", ""] and len(ft.sleeps) == 1
+
+
+@pytest.mark.parametrize("body", [None, [], "x", 5, {"content": "oops"}, {"content": None},
+                                  {"content": [1, "a", None]}, {"content": {"type": "text"}}])
+def test_response_from_json_is_robust(body):
+    resp = response_from_json(body, {"A": "b"})
+    assert resp.content == [] and resp.headers == {"a": "b"}
+    assert parse_bid(resp) == (None, "no_text", None)
+
+
+def test_response_from_json_skips_bad_blocks_and_fields():
+    resp = response_from_json({"content": ["junk", {"type": "text", "text": '{"bid": 2}'},
+                                           {"type": "redacted_thinking"}],
+                               "stop_reason": 5, "usage": "x"})
+    assert resp.content == [{"type": "text", "text": '{"bid": 2}'},
+                            {"type": "redacted_thinking", "text": ""}]
+    assert resp.stop_reason is None and resp.usage == {}
+    assert parse_bid(resp)[:2] == (2.0, "")
+
+
+@pytest.mark.parametrize("retry_after", [0, 0.0, -3.0, None])
+def test_zero_retry_after_does_not_hot_loop(retry_after):
+    n = []
+
+    def transport(kwargs):
+        n.append(1)
+        if len(n) <= 3:
+            raise TransportError("rate_limit", 429, retry_after, "wait")
+        return _api_json(), {}
+
+    c, ft = _client(transport)
+    resp, recs = c.create("S", "U")
+    assert resp is not None and len(n) == 4
+    assert len(ft.sleeps) == 3 and all(s >= 1.0 for s in ft.sleeps)
+    assert ft.sleeps[0] >= 2.0  # falls back to the backoff schedule
+
+
+def test_small_positive_retry_after_is_floored_at_one_second():
+    n = []
+
+    def transport(kwargs):
+        n.append(1)
+        if len(n) == 1:
+            raise TransportError("rate_limit", 429, 0.2, "wait")
+        return _api_json(), {}
+
+    c, ft = _client(transport)
+    c.create("S", "U")
+    assert ft.sleeps == [1.0]
+
+
+def test_server_error_keeps_retry_after():
+    e = map_sdk_error(anthropic.APIStatusError("s", response=_httpx_resp(503, {"retry-after": "9"}),
+                                               body=None))
+    assert (e.kind, e.status, e.retry_after) == ("server", 503, 9.0)
+    n = []
+
+    def transport(kwargs):
+        n.append(1)
+        if len(n) == 1:
+            raise e
+        return _api_json(), {}
+
+    c, ft = _client(transport)
+    c.create("S", "U")
+    assert ft.sleeps == [9.0]
+
+
+def test_failed_attempt_records_carry_ratelimit_headers():
+    err = map_sdk_error(anthropic.RateLimitError(
+        "rl", response=_httpx_resp(429, {"Retry-After": "1",
+                                         "Anthropic-RateLimit-Requests-Remaining": "0",
+                                         "anthropic-ratelimit-input-tokens-remaining": "123",
+                                         "anthropic-ratelimit-output-tokens-remaining": "x"}), body=None))
+    assert err.headers["anthropic-ratelimit-requests-remaining"] == "0"
+    n = []
+
+    def transport(kwargs):
+        n.append(1)
+        if len(n) == 1:
+            raise err
+        return _api_json(), {}
+
+    c, _ = _client(transport)
+    _, recs = c.create("S", "U")
+    assert recs[0]["reason"] == "http_429"
+    assert recs[0]["ratelimit_requests_remaining"] == 0
+    assert recs[0]["ratelimit_input_tokens_remaining"] == 123
+    assert recs[0]["ratelimit_output_tokens_remaining"] is None
+    assert recs[0]["input_tokens"] is None
+
+
+def test_huge_numbers_are_bad_value_not_exceptions():
+    huge = "1" + "0" * 399
+    assert parse_bid(_resp('{"bid": %s}' % huge))[:2] == (None, "bad_value")
+    assert parse_bid(_resp('{"bid": "%s"}' % huge))[:2] == (None, "bad_value")
+    assert parse_bid(_resp('{"bid": 1e999}'))[:2] == (None, "bad_value")
+    msg, reason = parse_message(_resp('{"my_cost": %s, "message_to_partner": "hi"}' % huge))
+    assert reason == "" and msg["my_cost"] is None and msg["message_to_partner"] == "hi"
+
+
+def test_status_less_errors_never_emit_http_none():
+    for kind, want in (("client", "http_error"), ("server", "server_error")):
+        def transport(kwargs, kind=kind):
+            raise TransportError(kind, None, None, "odd")
+
+        c, _ = _client(transport)
+        resp, recs = c.create("S", "U")
+        assert resp is None
+        assert all("None" not in r["reason"] for r in recs)
+        if kind == "client":
+            assert [r["reason"] for r in recs] == [want]
+        else:
+            assert recs[0]["reason"] == want and recs[-1]["reason"] == "transport_failed"
+
+
+@pytest.mark.parametrize("status", [408, 409])
+def test_408_and_409_are_client_errors_not_retried(status):
+    e = map_sdk_error(anthropic.APIStatusError("c", response=_httpx_resp(status), body=None))
+    assert (e.kind, e.status) == ("client", status)
+
+    def transport(kwargs):
+        raise e
+
+    c, ft = _client(transport)
+    resp, recs = c.create("S", "U")
+    assert resp is None and len(recs) == 1 and ft.sleeps == [] and recs[0]["reason"] == f"http_{status}"

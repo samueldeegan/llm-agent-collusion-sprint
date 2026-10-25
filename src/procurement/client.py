@@ -35,9 +35,10 @@ class TransportError(Exception):
     """A failed attempt. ``kind`` is rate_limit, server, timeout, connection, auth or client."""
 
     def __init__(self, kind: str, status: int | None = None, retry_after: float | None = None,
-                 message: str = ""):
+                 message: str = "", headers: dict | None = None):
         super().__init__(f"{kind} status={status} {message}".strip())
         self.kind, self.status, self.retry_after, self.message = kind, status, retry_after, message
+        self.headers = headers or {}  # response headers when the server answered (lower-cased keys)
 
 
 class FatalAPIError(RuntimeError):
@@ -60,16 +61,23 @@ class RawResponse:
 def response_from_json(body: dict, headers: dict | None = None) -> RawResponse:
     """Build a ``RawResponse`` from the Messages API JSON body; a thinking block's ``thinking`` field
     becomes its ``text``."""
+    if not isinstance(body, dict):
+        body = {}
+    blocks = body.get("content")
     content = []
-    for block in body.get("content") or []:
+    for block in blocks if isinstance(blocks, list) else []:
+        if not isinstance(block, dict):
+            continue
         btype = block.get("type")
         if btype == "thinking":
             text = block.get("thinking")
         else:
             text = block.get("text")
         content.append({"type": btype, "text": text if isinstance(text, str) else ""})
-    return RawResponse(content=content, stop_reason=body.get("stop_reason"),
-                       usage=dict(body.get("usage") or {}),
+    usage = body.get("usage")
+    stop = body.get("stop_reason")
+    return RawResponse(content=content, stop_reason=stop if isinstance(stop, str) else None,
+                       usage=dict(usage) if isinstance(usage, dict) else {},
                        headers={str(k).lower(): v for k, v in (headers or {}).items()})
 
 
@@ -84,27 +92,36 @@ def _retry_after(exc) -> float | None:
     return value if math.isfinite(value) and value >= 0 else None
 
 
+def _error_headers(exc) -> dict:
+    try:
+        return {str(k).lower(): v for k, v in exc.response.headers.items()}
+    except AttributeError:
+        return {}
+
+
 def map_sdk_error(exc: anthropic.APIError) -> TransportError:
-    """Map an SDK exception onto a ``TransportError``."""
+    """Map an SDK exception onto a ``TransportError`` (``retry-after`` and response headers kept for
+    every status error, 5xx included)."""
     if isinstance(exc, anthropic.APITimeoutError):
         return TransportError("timeout", None, None, "request timed out")
     if isinstance(exc, anthropic.APIConnectionError):
         return TransportError("connection", None, None, str(exc))
     if isinstance(exc, anthropic.APIStatusError):
-        status = exc.status_code
+        status, hdrs = exc.status_code, _error_headers(exc)
         if isinstance(exc, anthropic.RateLimitError):
-            return TransportError("rate_limit", status, _retry_after(exc), str(exc))
+            return TransportError("rate_limit", status, _retry_after(exc), str(exc), hdrs)
         if status >= 500:
-            return TransportError("server", status, None, str(exc))
+            return TransportError("server", status, _retry_after(exc), str(exc), hdrs)
         if isinstance(exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError)):
-            return TransportError("auth", status, None, str(exc))
-        return TransportError("client", status, None, str(exc))
+            return TransportError("auth", status, None, str(exc), hdrs)
+        return TransportError("client", status, None, str(exc), hdrs)
     return TransportError("client", None, None, str(exc))
 
 
 def _scrub(err: TransportError, secret: str | None) -> TransportError:
     if secret and secret in err.message:
-        err = TransportError(err.kind, err.status, err.retry_after, err.message.replace(secret, "***"))
+        err = TransportError(err.kind, err.status, err.retry_after, err.message.replace(secret, "***"),
+                             err.headers)
     return err
 
 
@@ -133,7 +150,14 @@ class _DefaultTransport:
         sdk = self._client()
         try:
             raw = sdk.messages.with_raw_response.create(**kwargs)
-            return raw.http_response.json(), dict(raw.headers)
+            headers = {str(k).lower(): v for k, v in dict(raw.headers).items()}
+            try:
+                body = raw.http_response.json()
+            except ValueError:  # includes JSONDecodeError; the message never carries body text
+                body = None
+            if not isinstance(body, dict):
+                raise TransportError("server", None, None, "malformed response body", headers)
+            return body, headers
         except anthropic.APIError as exc:
             raise _scrub(map_sdk_error(exc), os.environ.get(self._key_var)) from None
 
@@ -146,6 +170,19 @@ def with_content_reason(records: list[dict], reason: str) -> list[dict]:
     if out:
         out[-1]["reason"] = reason
     return out
+
+
+def _attempt_reason(err: TransportError) -> str:
+    """The ``reason`` of a failed attempt: ``http_429``, ``http_<code>``, ``timeout``, ``connection``,
+    or, when the server gave no status, ``server_error`` (malformed 200 body etc.) / ``http_error``
+    (a client or auth failure); never ``http_None``."""
+    if err.kind in ("timeout", "connection"):
+        return err.kind
+    if err.status is not None:
+        return f"http_{err.status}"
+    if err.kind == "rate_limit":
+        return "http_429"
+    return "server_error" if err.kind == "server" else "http_error"
 
 
 def _int_or_none(value):
@@ -176,9 +213,10 @@ class HaikuClient:
                 "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                 "messages": [{"role": "user", "content": user}]}
 
-    def _record(self, attempt: int, latency_ms: int, reason: str, resp: RawResponse | None) -> dict:
+    def _record(self, attempt: int, latency_ms: int, reason: str, resp: RawResponse | None,
+                headers: dict | None = None) -> dict:
         usage = resp.usage if resp else {}
-        headers = resp.headers if resp else {}
+        headers = resp.headers if resp else (headers or {})
         rec = {"attempt": attempt, "latency_ms": latency_ms,
                "input_tokens": _int_or_none(usage.get("input_tokens")),
                "output_tokens": _int_or_none(usage.get("output_tokens")),
@@ -193,7 +231,8 @@ class HaikuClient:
     def create(self, system: str, user: str) -> tuple[RawResponse | None, list[dict]]:
         """One model call under the transport policy. Returns ``(response, records)``; the response is
         None when the call is missing (budget exhausted or a non-retried 4xx), with the last record's
-        ``reason`` set to ``transport_failed`` or ``http_<status>``. An auth failure raises
+        ``reason`` set to ``transport_failed`` or ``http_<status>`` (``http_error`` for a client error without
+        a status; a retried malformed 200 body is ``server_error``). An auth failure raises
         ``FatalAPIError`` (its ``records`` hold the attempts)."""
         kwargs = self.request_kwargs(system, user)
         start = self._clock()
@@ -206,17 +245,14 @@ class HaikuClient:
                 body, headers = self._transport(kwargs)
             except TransportError as err:
                 latency = int((self._clock() - t0) * 1000)
-                reason = err.kind if err.kind in ("timeout", "connection") else f"http_{err.status}"
-                if err.kind == "rate_limit" and err.status is None:
-                    reason = "http_429"
-                records.append(self._record(attempt, latency, reason, None))
+                records.append(self._record(attempt, latency, _attempt_reason(err), None, err.headers))
                 if err.kind == "auth":
                     raise FatalAPIError(f"API authentication failed (status {err.status}); "
                                         f"check the API key", records) from None
                 if err.kind not in _RETRIED_KINDS:
                     return None, records
-                if err.retry_after is not None:
-                    wait = max(0.0, err.retry_after)
+                if err.retry_after is not None and err.retry_after > 0:
+                    wait = max(1.0, err.retry_after)  # a zero retry-after must not hot-loop
                 else:
                     wait = min(BACKOFF_START * 2 ** retries, BACKOFF_CAP) + self._rng.uniform(0, 1)
                 retries += 1
@@ -248,7 +284,10 @@ def _parse_number(value) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        x = float(value)
+        try:
+            x = float(value)
+        except OverflowError:
+            return None
     elif isinstance(value, str):
         cleaned = "".join(ch for ch in value if ch not in "$,").strip()
         cleaned = "".join(cleaned.split())
