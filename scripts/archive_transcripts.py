@@ -1,6 +1,6 @@
 r"""Zip run transcripts and checkpoints into results/archive/ (read-only on run dirs).
 
-    .venvScripts\python.exe scriptsrchive_transcripts.py --wave 1|2|round1 [--results-dir results]
+    .venv\Scripts\python.exe scriptsrchive_transcripts.py --wave 1|2|round1 [--results-dir results]
 
 wave 1: arms mem0, stateless; wave 2: hidden, stateless_hidden; round1: base-arm runs that still
 have transcripts under runs/ and calibration_runs/. Refuses to overwrite an existing zip."""
