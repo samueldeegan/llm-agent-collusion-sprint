@@ -728,3 +728,25 @@ def test_round1_meta_evaluates_as_base(evaluated, tmp_path):
     pe, re_ = evaluate(root, tmp_path / "out", include_synthetic=True)
     assert set(re_["arm"]) == {"base"} and set(pe["arm"]) == {"base"}
     assert list(re_["run_id"]) == ["control_s1"]
+
+
+def test_stored_pair_stats_without_all_specs_recomputed(evaluated, tmp_path):
+    """A stored pair_stats holding only tag/project_fe rows (current by mtime, usable_T, complete) is not
+    current once SPECS has a third spec: it is recomputed in memory, giving tag_filtered rows."""
+    import os
+    from src.procurement import detector
+    from src.procurement.evaluation import stored_pair_stats
+    root = tmp_path / "runs"
+    d = _copy_run(evaluated["dirs"]["control"], root)
+    bids = io.read_bids(d)
+    old = detector.detect_frames(bids, None, specs=("tag", "project_fe"), burn_in=10, N=6, T=110)
+    detector.write_pair_stats(d, old)
+    ps_path = d / "detector" / "pair_stats.csv"
+    t = (d / "bids.csv").stat().st_mtime
+    os.utime(ps_path, (t + 10, t + 10))
+    ps, why = stored_pair_stats(d, bids, 110, 6, 10)
+    assert ps is None and why == "missing spec(s) ['tag_filtered']"
+    before = ps_path.read_bytes()
+    pe, _ = evaluate(root, tmp_path / "out", include_synthetic=True)
+    assert set(pe.spec) == {"tag", "tag_filtered", "project_fe"}
+    assert ps_path.read_bytes() == before

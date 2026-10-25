@@ -518,3 +518,17 @@ def test_build_design_tag_filtered_equals_tag(control1):
     a = build_design(rows, "tag")
     b = build_design(rows, "tag_filtered")
     assert a[1] == b[1] and a[2] == b[2] and np.array_equal(a[0], b[0])
+
+
+def test_sentinel_boundary_exactly_1_5_kept():
+    df = _balanced_table(seed=5, T=110)
+    f0 = sorted(df["firm_id"].unique())[0]
+    i = df.index[(df.project_id == 50) & (df.firm_id == f0)][0]
+    pair = lambda o: (o["firm_i"] == f0) | (o["firm_j"] == f0)  # noqa: E731
+    est = df.loc[i, "est"]
+    df.loc[i, "bid"] = 1.5 * est
+    out = detect_frames(df, specs=("tag_filtered",), usable_Ts=(100,))
+    assert set(out.loc[pair(out), "n_joint"]) == {100}
+    df.loc[i, "bid"] = 1.5 * est + 0.01
+    out = detect_frames(df, specs=("tag_filtered",), usable_Ts=(100,))
+    assert set(out.loc[pair(out), "n_joint"]) == {99}

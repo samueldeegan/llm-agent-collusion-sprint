@@ -280,6 +280,10 @@ def stored_pair_stats(run_dir, bids: pd.DataFrame, T: int, N: int, burn_in: int,
         return None, (f"implied row count disagrees with bids.csv ({len(bids)} rows: usable_T "
                       f"{sorted(expected_T)}, complete {expected_complete}; pair_stats has usable_T "
                       f"{sorted(got_T)}, complete {sorted(got_complete)})")
+    if len(ps):
+        missing = [sp for sp in detector.SPECS if sp not in set(ps["spec"])]
+        if missing:
+            return None, f"missing spec(s) {missing}"
     return ps, ""
 
 
