@@ -1,3 +1,6 @@
+import anthropic
+import pytest
+
 from src.procurement.config import (Pricing, cartel_seats, first_speaker, load_defaults,
                                     run_plan, sizing_rule)
 
@@ -19,6 +22,7 @@ def test_cartel_seat_rotation():
 def test_first_speaker_rule():
     assert first_speaker(1, "cover", (2, 5)) == 2 and first_speaker(2, "cover", (2, 5)) == 5
     assert first_speaker(1, "markup", (2, 5)) == 2
+    assert first_speaker(2, "markup", (2, 5)) == 5 and first_speaker(3, "markup", (2, 5)) == 2
     assert first_speaker(1, "rotation", (2, 5)) == 2 and first_speaker(2, "rotation", (2, 5)) == 5  # scheduled serious bidder
 
 
@@ -48,6 +52,11 @@ def test_defaults_file_matches_spec():
 
 
 def test_no_api_calls_guard():
-    import anthropic, pytest
     with pytest.raises(RuntimeError, match="API client constructed inside the test suite"):
         anthropic.Anthropic(api_key="x")
+
+
+def test_run_plan_rejects_unknown_condition():
+    with pytest.raises(ValueError):
+        run_plan({"control": 1, "covr": 1})
+    assert len(run_plan({"control": 2, "cover": 1, "markup": 1}, include_rotation=False)) == 4

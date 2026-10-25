@@ -58,14 +58,15 @@ def cartel_seats(seed: int, condition: str) -> tuple[int, int] | None:
 
 
 def first_speaker(project_id: int, condition: str, seats: tuple[int, int]) -> int:
-    """Seat that speaks first on a 1-based project. Cover and rotation alternate
-    (rotation: the scheduled serious bidder); markup always starts with seats[0]."""
-    if condition == "markup":
-        return seats[0]
+    """Seat that speaks first on a 1-based project: odd -> seats[0], even -> seats[1]
+    for cover and markup; under rotation, the scheduled serious bidder (same alternation)."""
     return seats[(project_id - 1) % 2]
 
 
 def run_plan(R: dict[str, int], include_rotation: bool = True, T: int = 110) -> list[RunConfig]:
+    unknown = set(R) - set(CONDITIONS)
+    if unknown:
+        raise ValueError(f"unknown condition keys in R: {sorted(unknown)}")
     plan: list[RunConfig] = []
     for cond in CONDITIONS:
         if cond == "rotation" and not include_rotation:
