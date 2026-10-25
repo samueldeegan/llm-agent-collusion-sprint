@@ -179,14 +179,27 @@ def _ctx(role, messages, condition="cover", seat=1, t=2):
 
 def test_bidder_cover_uses_partner_message():
     bidder = SyntheticBidder(SEED, COST)
-    X = 800_000.0
+    X = 1_100_000.0
     msg = {"sender": 0, "recipient": 1, "my_cost": 1.0, "intended_serious_bid": X, "text": ""}
     ctx, env = _ctx("cover", [msg])
     est = float(env.est[ctx.t]); h = honest_bid(ctx.cost, est, bidder.noise[1, ctx.t])
-    assert bidder.bid(ctx).bid == round(max(h + 0.10 * est, X + 0.01 * est), 2)
+    assert X + 0.01 * est > h + 0.10 * est  # floor branch binds
+    with_msg = bidder.bid(ctx).bid
+    assert with_msg == round(X + 0.01 * est, 2)
     for msgs in ([], [dict(msg, intended_serious_bid=None)]):
         ctx, _ = _ctx("cover", msgs)
-        assert bidder.bid(ctx).bid == round(h + 0.10 * est, 2)
+        no_msg = bidder.bid(ctx).bid
+        assert no_msg == round(h + 0.10 * est, 2)
+        assert no_msg != with_msg
+
+
+def test_cover_floor_binds_with_zero_margin():
+    floor_hits = 0
+    for p, est, bid, tp, hon in _view("cover", margin=0.0):
+        ser, cov = (0, 1) if tp.cost[0] <= tp.cost[1] else (1, 0)
+        assert bid[cov] == round(max(hon[cov], bid[ser] + 0.01 * est), 2)
+        floor_hits += bid[cov] == round(bid[ser] + 0.01 * est, 2)
+    assert floor_hits > 0
 
 
 def test_bidder_markup_member_and_serious():
