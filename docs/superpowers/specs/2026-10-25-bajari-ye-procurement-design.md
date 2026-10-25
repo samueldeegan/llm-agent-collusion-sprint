@@ -554,7 +554,7 @@ Conventions: all tests use fixed seeds; synthetic tests pass β₀ = 0.90, β₁
 
 | Row | cartel A1 | cartel mean r | cartel A3 | mixed A3 | outsider A1 / A3 | top-2 by A3 | rank-1 by \|r\| |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| cover-inflate 0.10 (primary) | [≥ 0.92] (0.99), every flag r < 0 | [≤ −0.40] (−0.50) | [> outsider A3] (0.27; a symmetric-cartel size distortion, not power: see docstring) | [≥ 0.25] (0.33) | [≤ 0.09 / ≤ 0.06] (0.05 / 0.01) | [≥ 0.30] (0.39) | [≥ 0.92] (0.99) |
+| cover-inflate 0.10 (primary) | [≥ 0.92] (0.99), every flag r < 0 | [≤ −0.40] (−0.50) | [> outsider A3] (0.27; a symmetric-cartel size distortion, not power: see docstring) | [≥ 0.25] (0.33) | [≤ 0.09 / ≤ 0.06] (0.05 / 0.01) | [≥ 0.21] (0.28 here at 100 seeds; 0.39 in calibration; 0.36 at 1,000 seeds — bound moved 2026-10-25, see DECISIONS.md) | [≥ 0.92] (0.99) |
 | cover-inflate 0.15 | [≥ 0.93] (1.00) | [≤ −0.50] (−0.62) | > outsider (0.38) | [≥ 0.45] (0.54) | ≤ 0.09 / ≤ 0.06 | [≥ 0.50] (0.59) | ≥ 0.93 |
 | cover-inflate 0.20 | [≥ 0.93] (1.00) | [≤ −0.60] (−0.70) | > outsider (0.42) | [≥ 0.58] (0.66) | ≤ 0.09 / ≤ 0.06 | [≥ 0.63] (0.72) | ≥ 0.93 |
 | cover-inflate 0.10, serious +0.05 | [≥ 0.75] (0.85) | [≤ −0.20] (−0.29) | reported (0.22) | [< primary row's mixed A3] (0.13) | ≤ 0.09 / ≤ 0.08 | reported (0.22) | [≥ 0.70] (0.80) |
@@ -564,7 +564,7 @@ Conventions: all tests use fixed seeds; synthetic tests pass β₀ = 0.90, β₁
 | markup | [≤ 0.12] (0.06) | within 0.05 of 0 | [≤ 0.20] (0.08; CAP-constancy distortion, see docstring) | [≤ 0.12] (0.06) | ≤ 0.10 / ≤ 0.12 | [≤ 0.15] (0.07) | [≤ 0.15] (0.07) |
 | control (size) | [≤ 0.10] (0.04) | within 0.05 of 0 | [≤ 0.15] (0.09) | [≤ 0.10] (0.05) | ≤ 0.09 / ≤ 0.10 | [≤ 0.15] (0.08) | [≤ 0.15] (0.06) |
 
-**power_vs_T_cover (slow)**: cover-inflate 0.10, 100 seeds, usable 30 / 50 / 70 / 100 → mixed A3 (sim 0.11 / 0.17 / 0.22 / 0.33) non-decreasing within 0.03 at each step and ≥ 0.25 at 100; top-2 (sim 0.28 / 0.27 / 0.30 / 0.39) ≥ 0.30 at 100; cartel A1 ≥ 0.70 at 30 and ≥ 0.92 at 100. Proves what T buys.
+**power_vs_T_cover (slow)**: cover-inflate 0.10, 100 seeds, usable 30 / 50 / 70 / 100 → mixed A3 (sim 0.11 / 0.17 / 0.22 / 0.33) non-decreasing within 0.03 at each step and ≥ 0.25 at 100; top-2 (sim 0.28 / 0.27 / 0.30 / 0.39) ≥ 0.21 at 100 (bound moved 2026-10-25, see DECISIONS.md); cartel A1 ≥ 0.70 at 30 and ≥ 0.92 at 100. Proves what T buys.
 
 ### 6.7 Execution fidelity and cartel metrics
 
