@@ -372,6 +372,48 @@
       "mean_input_tokens": 363.0,
       "mean_output_tokens": 1406.111111111111,
       "cost_usd": 0.01342483
+    },
+    "hidden": {
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_223922_control_hidden_s1",
+      "utc": "2026-10-25T22:39:45.819642+00:00",
+      "parsed": 18,
+      "n_bids": 18,
+      "parse_rate": 1.0,
+      "failure_reasons": {},
+      "prompt_checks": [],
+      "n_calls": 18,
+      "n_attempts": 18,
+      "mean_latency_s": 6.243555555555556,
+      "min_latency_s": 4.625,
+      "max_latency_s": 8.813,
+      "input_tokens": 14403,
+      "output_tokens": 20499,
+      "cache_creation_input_tokens": 3173,
+      "cache_read_input_tokens": 6346,
+      "mean_input_tokens": 800.1666666666666,
+      "mean_output_tokens": 1138.8333333333333,
+      "cost_usd": 0.012149885
+    },
+    "stateless_hidden": {
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_223946_control_stateless_hidden_s1",
+      "utc": "2026-10-25T22:40:03.855572+00:00",
+      "parsed": 18,
+      "n_bids": 18,
+      "parse_rate": 1.0,
+      "failure_reasons": {},
+      "prompt_checks": [],
+      "n_calls": 18,
+      "n_attempts": 18,
+      "mean_latency_s": 4.462944444444444,
+      "min_latency_s": 3.405,
+      "max_latency_s": 6.046,
+      "input_tokens": 14973,
+      "output_tokens": 13452,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "mean_input_tokens": 831.8333333333334,
+      "mean_output_tokens": 747.3333333333334,
+      "cost_usd": 0.0082233
     }
   }
 }
