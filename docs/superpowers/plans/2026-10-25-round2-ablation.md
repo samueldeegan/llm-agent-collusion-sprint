@@ -13,6 +13,7 @@
 ## Global Constraints
 
 - Every test is written before the code it checks; the full suite (`.venv\Scripts\python.exe -m pytest tests -q`) stays green with zero API calls; nothing in the suite writes under `results/`, `config/` or `docs/superpowers/DECISIONS.md` (Task 1 enforces this).
+- **No test may invoke a destructive call (`rmtree`, `remove`, `unlink`, `rename`, write-mode `open`) on a real path.** A red-phase run executes whatever the test calls; Task 1's original red run deleted the uncommitted round-1 transcripts (DECISIONS 2026-10-25 21:40). Guard tests use non-existent probe paths; everything else uses `tmp_path`.
 - Do not change: cost parameters, EST range, map, η range, ν levels, K, T = 110, burn-in 10, seeds, firm names, the bid JSON schema beyond the two fields named in brief §2.1 (no `no_bid`), the forced "Cost: $X / intended bid $Y" message prefix, the model, `max_tokens`, absence of temperature/effort, concurrency 6. Any file under round-1 run, calibration-run, launch or analysis directories is read-only.
 - `bids.csv` columns and the detector input contract are unchanged. `arm` goes to `truth.csv` and `run_meta.json`, never to `bids.csv`.
 - Base arm (`arm == "base"`) keeps `run_id = "{condition}_s{seed}"` and the directory name `<UTC>_{condition}_s{seed}`; a `run_meta.json` without `arm` reads as `"base"`.
