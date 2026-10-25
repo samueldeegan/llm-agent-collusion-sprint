@@ -114,7 +114,8 @@ def build_manifest(plan: list[RunConfig], keys: int, stagger_s: float = 5) -> li
         slot = 2 if keys == 2 and i % 2 == 1 else 1
         cfg = replace(cfg, api_key_slot=slot)
         out.append({"launch_index": i, "name": f"{i:02d}_{config.run_id_of(cfg.condition, cfg.seed, cfg.arm)}",
-                    "condition": cfg.condition, "seed": cfg.seed, "T": cfg.T, "stagger_s": stagger_s * i,
+                    "condition": cfg.condition, "seed": cfg.seed, "arm": cfg.arm,
+                    "run_id": config.run_id_of(cfg.condition, cfg.seed, cfg.arm), "T": cfg.T, "stagger_s": stagger_s * i,
                     "api_key_slot": slot, "config": cfg.to_dict()})
     return out
 
@@ -692,7 +693,8 @@ class Launcher:
         self.log(f"stop all runs: {reason} (actual ${self.actual:.2f}, projected ${self.projected:.2f})")
         not_started = [r for r in self.runs if r.state == "queued"]
         stop_all(procs, dirs, self.results_root, reason, self.actual, self.projected, self.clock, self.sleep,
-                 not_started=[config.run_id_of(r.entry['condition'], r.entry['seed']) for r in not_started],
+                 not_started=[r.entry.get("run_id") or config.run_id_of(r.entry['condition'], r.entry['seed'])
+                              for r in not_started],
                  copy_dir=self.workspace)
         for r in not_started:
             r.state = "not_started"
@@ -827,19 +829,31 @@ def _experiment_metas(results_root) -> list[tuple[Path, dict]]:
     return out
 
 
-def finished_runs(results_root, plan: list[RunConfig]) -> dict[tuple[str, int], str]:
-    """(condition, seed) -> run dir name, for each plan entry that already has a finished experiment
+def _meta_run_id(meta: dict) -> str | None:
+    try:
+        return config.run_id_from_meta(meta)
+    except (KeyError, TypeError):
+        return None
+
+
+def _plan_by_run_id(plan: list[RunConfig]) -> dict[str, RunConfig]:
+    return {config.run_id_of(c.condition, c.seed, c.arm): c for c in plan}
+
+
+def finished_runs(results_root, plan: list[RunConfig]) -> dict[str, str]:
+    """run_id -> run dir name, for each plan entry that already has a finished experiment
     run under ``results_root`` with the same configuration (the runner's resume check: condition,
     seed, T, cartel seats, N, bidder, model, windows, message cap, concurrency, scripted fields, cost
     parameters)."""
-    by_key = {(c.condition, c.seed): c for c in plan}
-    found: dict[tuple[str, int], str] = {}
+    by_key = _plan_by_run_id(plan)
+    found: dict[str, str] = {}
     for d, meta in _experiment_metas(results_root):
         if meta.get("finished_utc") is None:
             continue
-        cfg = by_key.get((meta.get("condition"), meta.get("seed")))
+        key = _meta_run_id(meta)
+        cfg = by_key.get(key)
         if cfg is not None and runner.same_run(cfg, meta):
-            found.setdefault((cfg.condition, cfg.seed), d.name)
+            found.setdefault(key, d.name)
     return found
 
 
@@ -848,10 +862,10 @@ def existing_experiment_T(results_root, plan: list[RunConfig]) -> tuple[int | No
     as a plan entry except possibly T) and are finished or resumable (hold a checkpoint): ``(T, dir
     names)``; ``(None, [])`` when there is none. Several T values: the most common; on a tie the plan's
     own T when it is among them, else the latest run's."""
-    by_key = {(c.condition, c.seed): c for c in plan}
+    by_key = _plan_by_run_id(plan)
     hits: list[tuple[int, str]] = []
     for d, meta in _experiment_metas(results_root):
-        cfg = by_key.get((meta.get("condition"), meta.get("seed")))
+        cfg = by_key.get(_meta_run_id(meta))
         T = meta.get("T")
         if cfg is None or not isinstance(T, int) or isinstance(T, bool):
             continue
@@ -887,18 +901,18 @@ def _last_activity_of(run_dir: Path) -> datetime | None:
 
 
 def unfinished_runs(results_root, plan: list[RunConfig], now: datetime, stall_s: float
-                    ) -> tuple[dict[tuple[str, int], list[str]], dict[tuple[str, int], Path]]:
+                    ) -> tuple[dict[str, list[str]], dict[str, Path]]:
     """Unfinished experiment dirs matching a plan entry (``runner.same_run``): ``(live, resume)``.
-    ``live[(condition, seed)]``: the dir names whose last activity is within ``stall_s`` of ``now``;
-    ``resume[(condition, seed)]``: the latest (by name) unfinished matching dir holding a
+    ``live[run_id]``: the dir names whose last activity is within ``stall_s`` of ``now``;
+    ``resume[run_id]``: the latest (by name) unfinished matching dir holding a
     ``checkpoint.json``, for the entries with no live dir."""
-    by_key = {(c.condition, c.seed): c for c in plan}
-    live: dict[tuple[str, int], list[str]] = {}
-    resume: dict[tuple[str, int], Path] = {}
+    by_key = _plan_by_run_id(plan)
+    live: dict[str, list[str]] = {}
+    resume: dict[str, Path] = {}
     for d, meta in _experiment_metas(results_root):
         if meta.get("finished_utc") is not None:
             continue
-        key = (meta.get("condition"), meta.get("seed"))
+        key = _meta_run_id(meta)
         cfg = by_key.get(key)
         if cfg is None or not runner.same_run(cfg, meta):
             continue
@@ -938,6 +952,10 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
                     help="also launch (condition, seed) pairs that already have a finished matching run")
     ap.add_argument("--ignore-live", action="store_true",
                     help="start even when an unfinished matching run shows activity within stall_s")
+    ap.add_argument("--arms", default=None,
+                    help="comma list of ablation arms from the plan's arms entries (implies --no-ladder; "
+                         "the sizing rule's per-condition R minimum is not applied)")
+    ap.add_argument("--no-ladder", action="store_true", help="skip the time ladder (rung 0)")
     args = ap.parse_args(argv)
     clock = clock or _utc_now
     sleep = sleep or time.sleep
@@ -959,6 +977,14 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     plan_file = json.loads(_repo_path(args.plan).read_text(encoding="utf-8"))
     frozen_path, decisions = _repo_path(args.frozen), _repo_path(args.decisions)
     stall_s = float(defaults.get("stall_s", 600))
+    arms = [a.strip() for a in args.arms.split(",") if a.strip()] if args.arms is not None else None
+    if arms is not None:  # an empty or unknown arm is refused before any file is written
+        known = [e.get("arm") for e in plan_file.get("arms", [])]
+        bad = [a for a in arms if a not in known] or ([""] if not arms else [])
+        if bad:
+            print(f"launcher: refusing to start: unknown or empty --arms {bad} (the plan has {known})",
+                  file=sys.stderr)
+            return EXIT_PREFLIGHT
 
     # frozen cost parameters (audit 4.2 step 6)
     cost, frozen_from = _cost_from_defaults(defaults), None
@@ -992,9 +1018,12 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
         sized = apply_sizing(cal["limits"][1], has_key2)
         keys = sized["keys"]
         R = {c: min(int(plan_R.get(c, 0)), int(sized["R"].get(c, 0))) for c in {**plan_R, **sized["R"]}}
+        if arms is not None:  # R comes from the arms entries; the sizing rule gives the key count only
+            R = plan_R
         sizing = (f"sizing rule from {cal_path.name}: output-tokens limit {cal['limits'][1]['output_tokens']}, "
                   f"key 2 {'set' if has_key2 else 'not set'}; sized R {_r_text(sized['R'])}, plan R "
-                  f"{_r_text(plan_R)} -> R {_r_text(R)} (per-condition minimum)")
+                  f"{_r_text(plan_R)} -> R {_r_text(R)} (per-condition minimum"
+                  + ("; not applied with --arms: R from the arms entries)" if arms is not None else ")"))
     else:
         R, keys = plan_R, 1
         sizing = f"no calibration limits ({cal_path}): R from the plan, cap = plan size, one key"
@@ -1014,6 +1043,9 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
             "T": int(plan_file.get("T", defaults["T"]))}
 
     def configs(p: dict) -> list[RunConfig]:  # the single settings source (A1): config/defaults.json
+        if arms is not None:
+            return config.arm_plan(plan_file, arms, p["T"], defaults=defaults, cost=cost,
+                                   bidder=args.bidder, results_root=str(results_root))
         return config.run_plan(p["R"], p["include_rotation"], p["T"], defaults=defaults, cost=cost,
                                bidder=args.bidder, results_root=str(results_root))
 
@@ -1023,7 +1055,11 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     # time ladder (audit 4.2): may lower R and drop rotation; T stays at the existing runs' T
     now = clock()
     deadline = datetime.fromisoformat(plan_file["deadline_utc"].replace("Z", "+00:00"))
-    plan, rung, stop = time_ladder(now, deadline, False, plan)
+    no_ladder = args.no_ladder or arms is not None
+    if no_ladder:
+        rung, stop = 0, False
+    else:
+        plan, rung, stop = time_ladder(now, deadline, False, plan)
     rung_lines = [f"time ladder rung {k} (not launched by deadline - {LADDER[k][0]:g} h, "
                   f"deadline {plan_file['deadline_utc']}): {LADDER[k][1]}" for k in range(1, rung + 1)]
     t_line = None
@@ -1041,14 +1077,15 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
 
     runs = configs(plan)
     done = {} if args.rerun_finished else finished_runs(results_root, runs)
-    skipped = [{"name": config.run_id_of(c, s), "condition": c, "seed": s, "run_dir": str(results_root / d)}
-               for (c, s), d in sorted(done.items())]
-    runs = [c for c in runs if (c.condition, c.seed) not in done]
+    by_id = _plan_by_run_id(runs)
+    skipped = [{"name": rid, "condition": by_id[rid].condition, "seed": by_id[rid].seed,
+                "arm": by_id[rid].arm, "run_dir": str(results_root / d)} for rid, d in sorted(done.items())]
+    runs = [c for c in runs if config.run_id_of(c.condition, c.seed, c.arm) not in done]
 
     # relaunch safety (B5): a live unfinished run refuses the launch; a stale checkpointed one resumes
     live, resume = unfinished_runs(results_root, runs, now, stall_s)
     if live and not args.ignore_live:
-        names = "; ".join(f"{config.run_id_of(c, s)}: {', '.join(v)}" for (c, s), v in sorted(live.items()))
+        names = "; ".join(f"{rid}: {', '.join(v)}" for rid, v in sorted(live.items()))
         msg = (f"unfinished run(s) with activity in the last {stall_s:g} s, probably still running: {names} "
                "(stop them first, or pass --ignore-live)")
         if not args.dry_run:
@@ -1066,12 +1103,18 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
 
     manifest = build_manifest(runs, keys, args.stagger_s)
     for e in manifest:
-        d = resume.get((e["condition"], e["seed"]))
+        d = resume.get(e["run_id"])
         e["resume_dir"] = None if d is None else str(d)
     limits_by_slot = cal["limits"] if cal else {}
     caps = slot_caps(limits_by_slot, manifest, call_s)
     cap, calls = sum(caps.values()), planned_calls(runs)
-    counts = {c: sum(1 for r in runs if r.condition == c) for c in CONDITIONS}
+    if arms is not None:
+        counts = {f"{a}/{c}": n for a in arms for c in CONDITIONS
+                  if (n := sum(1 for r in runs if r.arm == a and r.condition == c))}
+    else:
+        counts = {c: sum(1 for r in runs if r.condition == c) for c in CONDITIONS}
+    counts_text = (", ".join(f"{k} {n}" for k, n in counts.items()) if arms is not None
+                   else _r_text(counts))
 
     pricing = Pricing(**defaults["pricing"])
     a_priori = calls * pricing.cost_usd(A_PRIORI_INPUT, A_PRIORI_OUTPUT, 0, 0)
@@ -1084,12 +1127,12 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
                                header={"created_utc": _iso(now), **info, "planned_calls": calls})
     lau = Launcher(manifest, workspace, results_root, caps=caps, pricing=pricing, planned_calls=calls,
                    clock=clock, sleep=sleep, popen=popen, poll_s=args.poll_s,
-                   stall_s=stall_s, stop_usd=float(defaults.get("spend_stop_usd", 75)),
+                   stall_s=stall_s, stop_usd=float(defaults["spend_stop_usd"]),
                    stagger_s=args.stagger_s, info=info, skipped=skipped)
-    per_cond = ", ".join(f"{c} {counts[c]}" for c in LAUNCH_ORDER)
+    per_cond = counts_text if arms is not None else ", ".join(f"{c} {counts[c]}" for c in LAUNCH_ORDER)
     slots = ", ".join(f"{k}: {v}" for k, v in caps.items())
     lau.log(f"launch plan{' (dry run)' if args.dry_run else ''}: {len(runs)} runs: {per_cond}")
-    lau.log(f"R = {_r_text(counts)}, T {plan['T']}, cap {cap} (per key slot {slots}; call_s {call_s:g}), "
+    lau.log(f"R = {counts_text}, T {plan['T']}, cap {cap} (per key slot {slots}; call_s {call_s:g}), "
             f"keys {keys}, bidder {args.bidder}")
     lau.log(f"planned calls {calls}; a-priori cost ${a_priori:.2f} at {A_PRIORI_INPUT / 1000:g}k input / "
             f"{A_PRIORI_OUTPUT / 1000:g}k output tokens per call")
@@ -1099,17 +1142,18 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     for x in skipped:
         lau.log(f"skip {x['name']}: finished matching run {Path(x['run_dir']).name} (skipped_done; "
                 "--rerun-finished to run it again)")
-    for (c, s), d in sorted(resume.items()):
-        lau.log(f"resume {config.run_id_of(c, s)}: unfinished run {d.name} restarts from its checkpoint (--resume-dir; "
+    for rid, d in sorted(resume.items()):
+        lau.log(f"resume {rid}: unfinished run {d.name} restarts from its checkpoint (--resume-dir; "
                 "uses the one-restart budget)")
     lau.log(f"spend baseline ${lau.baseline[0]:.2f} over {lau.baseline[1]} calls in "
             f"{len(lau.baseline_dirs)} existing run dir(s)")
     lau.log(f"frozen parameters: {frozen_from or 'none (defaults.json)'}; time ladder: "
-            + ("; ".join(rung_lines) if rung_lines else "no rung"))
+            + (f"off ({'--arms implies --no-ladder' if arms is not None else '--no-ladder'})" if no_ladder
+                  else "; ".join(rung_lines) if rung_lines else "no rung"))
     if args.dry_run:
         lau.write_status()
         return EXIT_DONE
-    _append_decision(decisions, now, f"launch {workspace.name}: {len(runs)} runs, R = {_r_text(counts)}, "
+    _append_decision(decisions, now, f"launch {workspace.name}: {len(runs)} runs, R = {counts_text}, "
                      f"T {plan['T']}, keys {keys}, cap {cap}; {sizing}", "audit Part 2.3 sizing rule, 4.2 step 8")
     return lau.monitor()
 

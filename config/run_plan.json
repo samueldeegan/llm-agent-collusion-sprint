@@ -2,5 +2,11 @@
   "R": {"control": 12, "cover": 12, "markup": 4, "rotation": 4},
   "include_rotation": true,
   "T": 110,
-  "deadline_utc": "2026-10-26T11:59:00Z"
+  "deadline_utc": "2026-10-26T11:59:00Z",
+  "arms": [
+    {"arm": "mem0", "R": {"control": 12}, "memory_window": 0, "scratchpad_enabled": false, "history_window": 20, "bidder_info": "shown"},
+    {"arm": "stateless", "R": {"control": 12}, "memory_window": 0, "scratchpad_enabled": false, "history_window": 0, "bidder_info": "shown"},
+    {"arm": "hidden", "R": {"control": 12}, "memory_window": 10, "scratchpad_enabled": true, "history_window": 20, "bidder_info": "hidden"},
+    {"arm": "stateless_hidden", "R": {"control": 12}, "memory_window": 0, "scratchpad_enabled": false, "history_window": 0, "bidder_info": "hidden"}
+  ]
 }

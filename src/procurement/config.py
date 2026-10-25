@@ -146,6 +146,26 @@ def run_config_from_defaults(defaults: dict, *, condition: str, seed: int, T: in
                      cost=cost if cost is not None else cost_from_defaults(defaults), **settings)
 
 
+def arm_plan(plan_file: dict, arms: list[str], T: int, *, defaults: dict,
+             cost: CostParams | None = None, **overrides) -> list[RunConfig]:
+    """Configs of the ablation arms named in ``arms`` (in that order) from the ``arms`` entries of
+    ``config/run_plan.json``: seeds 1..n per condition of the entry's ``R``; the entry's other fields
+    (windows, scratchpad_enabled, bidder_info) are RunConfig overrides. An unknown arm is a ValueError."""
+    entries = {e["arm"]: e for e in plan_file.get("arms", [])}
+    unknown = [a for a in arms if a not in entries]
+    if unknown:
+        raise ValueError(f"unknown arm(s) {unknown}; the plan has {sorted(entries)}")
+    plan: list[RunConfig] = []
+    for arm in arms:
+        entry = entries[arm]
+        fields = {k: v for k, v in entry.items() if k not in ("arm", "R")}
+        for cond, n in entry["R"].items():
+            for seed in range(1, int(n) + 1):
+                plan.append(run_config_from_defaults(defaults, condition=cond, seed=seed, T=T, cost=cost,
+                                                     arm=arm, **{**fields, **overrides}))
+    return plan
+
+
 def run_plan(R: dict[str, int], include_rotation: bool = True, T: int = 110, *,
              defaults: dict | None = None, cost: CostParams | None = None, **overrides) -> list[RunConfig]:
     """One config per (condition, seed), seeds 1..R[condition]. With ``defaults`` every config is built by

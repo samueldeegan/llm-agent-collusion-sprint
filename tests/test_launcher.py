@@ -704,7 +704,11 @@ def test_dry_run_writes_manifest_and_summary(tmp_path, monkeypatch, capsys):
 
 def test_run_plan_config_file(repo_root):
     data = json.loads((repo_root / "config" / "run_plan.json").read_text(encoding="utf-8"))
+    arms = data.pop("arms")
     assert data == {"R": FULL_R, "include_rotation": True, "T": 110, "deadline_utc": "2026-10-26T11:59:00Z"}
+    assert [e["arm"] for e in arms] == [e["arm"] for e in ARM_ENTRIES]
+    assert all(e["R"] == {"control": 12} for e in arms)
+    assert [{k: v for k, v in e.items() if k != "R"} for e in arms] == ARM_ENTRIES
 
 
 @pytest.mark.slow
@@ -1135,3 +1139,145 @@ def test_relaunch_keeps_T_of_existing_runs(tmp_path):
     assert launcher.main(args2 + ["--dry-run"], clock=clock) == 0
     (ws2,) = (tmp_path / "other" / "launches").iterdir()
     assert json.loads((ws2 / "status.json").read_text(encoding="utf-8"))["T"] == 80
+
+
+# ---------------------------------------------------------------- round 2: arms, --no-ladder, run ids
+
+ARM_ENTRIES = [
+    {"arm": "mem0", "memory_window": 0, "scratchpad_enabled": False, "history_window": 20, "bidder_info": "shown"},
+    {"arm": "stateless", "memory_window": 0, "scratchpad_enabled": False, "history_window": 0,
+     "bidder_info": "shown"},
+    {"arm": "hidden", "memory_window": 10, "scratchpad_enabled": True, "history_window": 20,
+     "bidder_info": "hidden"},
+    {"arm": "stateless_hidden", "memory_window": 0, "scratchpad_enabled": False, "history_window": 0,
+     "bidder_info": "hidden"},
+]
+
+
+def _plan_file_with_arms(tmp_path, n=12, T=110, deadline="2026-10-27T11:59:00Z") -> Path:
+    p = tmp_path / "run_plan_arms.json"
+    p.write_text(json.dumps({"R": FULL_R, "include_rotation": True, "T": T, "deadline_utc": deadline,
+                             "arms": [{**e, "R": {"control": n}} for e in ARM_ENTRIES]}), encoding="utf-8")
+    return p
+
+
+def _arm_args(tmp_path, arms, *extra, plan=None):
+    return ["--plan", str(plan or _plan_file_with_arms(tmp_path)), "--dry-run", "--allow-unfrozen",
+            "--results-root", str(tmp_path / "results" / "runs"), "--decisions", str(tmp_path / "D.md"),
+            "--arms", arms, *extra]
+
+
+def test_launcher_arms_subset(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    rc = launcher.main(_arm_args(tmp_path, "mem0,stateless"), clock=FakeClock(), popen=_no_popen)
+    assert rc == 0
+    (ws,) = (tmp_path / "results" / "launches").iterdir()
+    manifest = json.loads((ws / "manifest.json").read_text(encoding="utf-8"))
+    runs = manifest["runs"]
+    assert len(runs) == 24 and {r["arm"] for r in runs} == {"mem0", "stateless"}
+    assert sorted(r["run_id"] for r in runs)[:2] == ["control_mem0_s1", "control_mem0_s10"]
+    mem0 = next(r for r in runs if r["run_id"] == "control_mem0_s1")
+    data = json.loads(Path(mem0["config"]).read_text(encoding="utf-8"))
+    assert (data["memory_window"], data["scratchpad_enabled"], data["bidder_info"]) == (0, False, "shown")
+    st = next(r for r in runs if r["arm"] == "stateless")
+    data = json.loads(Path(st["config"]).read_text(encoding="utf-8"))
+    assert data["history_window"] == 0 and data["T"] == 110 and data["condition"] == "control"
+    assert data["arm"] == "stateless"
+    log = (ws / "launcher.log").read_text(encoding="utf-8")
+    assert "launch plan (dry run): 24 runs" in log and "time ladder: off" in log
+    assert "mem0/control 12" in log and "stateless/control 12" in log
+
+
+def test_arms_unknown_refused(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    rc = launcher.main(_arm_args(tmp_path, "mem0,nope"), clock=FakeClock(), popen=_no_popen)
+    assert rc == launcher.EXIT_PREFLIGHT
+    assert "nope" in capsys.readouterr().err
+    assert not (tmp_path / "results" / "launches").exists()
+
+
+def test_no_ladder_skips_rungs(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    near = datetime(2026, 10, 25, 13, 0, tzinfo=timezone.utc)  # 1 h before the deadline below
+    plan = _plan_file(tmp_path, "2026-10-25T14:00:00Z")
+    base = ["--plan", str(plan), "--dry-run", "--allow-unfrozen", "--decisions", str(tmp_path / "D.md"),
+            "--results-root", str(tmp_path / "results" / "runs")]
+    assert launcher.main(base, clock=FakeClock(near), popen=_no_popen) == launcher.EXIT_LADDER
+    assert launcher.main([*base, "--no-ladder"], clock=FakeClock(near), popen=_no_popen) == 0
+    (ws,) = (tmp_path / "results" / "launches").iterdir()
+    assert "time ladder: off" in (ws / "launcher.log").read_text(encoding="utf-8")
+    status = json.loads((ws / "status.json").read_text(encoding="utf-8"))
+    assert status["R"] == FULL_R and status["rung"] == 0  # full plan, nothing lowered
+
+
+def test_arms_imply_no_ladder_and_skip_sizing_minimum(tmp_path, monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    monkeypatch.delenv("ANTHROPIC_API_KEY_2", raising=False)
+    results = tmp_path / "results"
+    results.mkdir()
+    (results / "calibration.json").write_text(json.dumps({
+        "limits": {"1": {"requests": 1000, "input_tokens": 2_000_000, "output_tokens": 400_000}}}),
+        encoding="utf-8")
+    near = datetime(2026, 10, 25, 13, 0, tzinfo=timezone.utc)
+    plan = _plan_file_with_arms(tmp_path, deadline="2026-10-25T14:00:00Z")
+    assert launcher.main(_arm_args(tmp_path, "mem0", plan=plan), clock=FakeClock(near), popen=_no_popen) == 0
+    (ws,) = (results / "launches").iterdir()
+    manifest = json.loads((ws / "manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest["runs"]) == 12  # sized control R would be 8; arms take R from the plan
+    assert "time ladder: off" in (ws / "launcher.log").read_text(encoding="utf-8")
+
+
+def test_spend_cap_from_config(tmp_path, monkeypatch):
+    from src.procurement import config
+    assert config.load_defaults()["spend_stop_usd"] == 150
+    seen = {}
+    real = launcher.Launcher
+
+    class Spy(real):
+        def __init__(self, *a, **k):
+            seen["stop_usd"] = k["stop_usd"]
+            super().__init__(*a, **k)
+
+    monkeypatch.setattr(launcher, "Launcher", Spy)
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    assert launcher.main(_arm_args(tmp_path, "mem0"), clock=FakeClock(), popen=_no_popen) == 0
+    assert seen["stop_usd"] == 150.0
+
+
+def _arm_cfg(arm, condition="control", seed=1, T=12, **kw):
+    from src.procurement import config
+    entry = next(e for e in ARM_ENTRIES if e["arm"] == arm) if arm != "base" else {}
+    fields = {k: v for k, v in entry.items() if k != "arm"}
+    return config.run_config_from_defaults(config.load_defaults(), condition=condition, seed=seed, T=T,
+                                           bidder="synthetic", arm=arm, **fields, **kw)
+
+
+def test_finished_runs_keyed_by_arm(tmp_path):
+    root = tmp_path / "runs"
+    _experiment_dir(root, _arm_cfg("base"), "20261025_100000_control_s1", finished=True)
+    plan = [_arm_cfg("mem0"), _arm_cfg("base")]
+    assert list(launcher.finished_runs(root, plan)) == ["control_s1"]  # control_mem0_s1 is not done
+    _experiment_dir(root, _arm_cfg("mem0"), "20261025_110000_control_mem0_s1", finished=True)
+    assert set(launcher.finished_runs(root, plan)) == {"control_s1", "control_mem0_s1"}
+
+
+def test_live_other_arm_does_not_block(tmp_path, capsys):
+    """A live unfinished wave-1 run (mem0) neither blocks nor gets resumed by a hidden-arm launch."""
+    root = tmp_path / "results" / "runs"
+    live = _experiment_dir(root, _arm_cfg("mem0", seed=3), "20261025_115000_control_mem0_s3", checkpoint=True,
+                           activity=T0 - timedelta(seconds=30))
+    plan = _plan_file_with_arms(tmp_path, n=1)
+    args = ["--plan", str(plan), "--bidder", "synthetic", "--allow-unfrozen", "--frozen", str(tmp_path / "n.json"),
+            "--results-root", str(root), "--poll-s", "5", "--stagger-s", "0", "--decisions", str(tmp_path / "D.md"),
+            "--arms", "hidden,stateless_hidden"]
+    clock = FakeClock()
+    popen = FakePopen(clock)
+    assert launcher.main(args, clock=clock, sleep=clock.sleep, popen=popen) == 0
+    assert len(popen.calls) == 2 and all(_arg(c[2], "--resume-dir") is None for c in popen.calls)
+    assert live.name not in capsys.readouterr().err
+    # a launch for the live arm itself (seed 3 needs n >= 3) is refused
+    plan3 = _plan_file_with_arms(tmp_path, n=3)
+    args3 = [str(plan3) if a == str(plan) else a for a in args]
+    args3[-1] = "mem0"
+    rc = launcher.main(args3, clock=clock, sleep=clock.sleep, popen=FakePopen(clock))
+    assert rc == launcher.EXIT_PREFLIGHT
