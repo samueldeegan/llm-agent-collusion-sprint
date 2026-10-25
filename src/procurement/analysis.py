@@ -14,16 +14,22 @@
 
 Reads: ``pair_stats.csv``, ``truth.csv``, ``bids.csv``, ``run_meta.json`` (through evaluation and the
 detector), ``excluded_runs.json``, ``scripted_signatures.csv``, ``results/calibration.json``,
-``results/STOP.json`` and the existence of a run dir's ``STOP`` marker (stop reasons of incomplete runs).
-Never messages, calls, transcripts, checkpoints or heartbeats.
+``results/STOP.json``, ``config/run_plan.json`` and ``config/frozen.json`` (when given; run selection and
+the planned runs without a directory) and the existence of a run dir's ``STOP`` marker (stop reasons of
+incomplete runs). ``STOP.json`` and ``calibration.json`` are read defensively: an unreadable file, or one
+that is not a JSON object, is treated as absent and named under "Not computed". Never messages, calls,
+transcripts, checkpoints or heartbeats.
 
-CLI: ``python -m src.procurement.analysis --results-root results/runs [--out DIR] [--scripted-csv PATH]``.
+CLI: ``python -m src.procurement.analysis --results-root results/runs [--out DIR] [--scripted-csv PATH]
+[--include-synthetic] [--frozen config/frozen.json] [--plan config/run_plan.json]`` (relative paths resolve
+against the repository root).
 """
 from __future__ import annotations
 
 import argparse
 import json
 import math
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,7 +38,7 @@ import pandas as pd
 from matplotlib.figure import Figure
 from scipy import stats
 
-from src.procurement import detector, evaluation, io
+from src.procurement import config, detector, evaluation, io
 
 FLAG_RATES_COLUMNS = ["condition", "spec", "threshold", "pair_class", "test", "n_pairs", "n_flagged", "rate",
                       "ci_low", "ci_high", "n_runs", "in_sample"]
@@ -470,9 +476,14 @@ def stop_reason(run_dir, run_id: str, stop_json: dict | None) -> str:
 def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd.DataFrame,
                    null: pd.DataFrame, power: pd.DataFrame, robustness: pd.DataFrame, thresholds: dict,
                    figure: dict, excluded: list[dict], calibration: dict | None, scripted_given: bool,
-                   results_root=None, analysis_dir=None, stop_reasons: dict | None = None) -> str:
-    """``results/README.md``: every number the paper needs (step-4 audit Part 4.2 step 9), 3 decimals."""
-    notes: list[str] = []
+                   results_root=None, analysis_dir=None, stop_reasons: dict | None = None,
+                   missing_runs: list[dict] | None = None, input_notes: list[str] | None = None,
+                   calibration_problem: str | None = None) -> str:
+    """``results/README.md``: every number the paper needs (step-4 audit Part 4.2 step 9), 3 decimals.
+    ``missing_runs`` ([{"run_id", "reason"}]) are runs without any directory (STOP.json
+    ``runs_not_started``, plan rows never launched); ``input_notes`` go under "Not computed";
+    ``calibration_problem`` replaces "not found" when ``calibration.json`` exists but is unusable."""
+    notes: list[str] = list(input_notes or [])
     L: list[str] = ["# Results: Bajari-Ye procurement experiment", ""]
     L.append(f"Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S} UTC by `python -m src.procurement.analysis`"
              f" from `{results_root}`; analysis files in `{analysis_dir}`. Numbers to 3 decimals; "
@@ -509,6 +520,11 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
                          int(r["projects_completed"])])
         L += _table(["run", "condition", "seed", "directory", "status", "projects completed"], rows)
     L.append("")
+    if missing_runs:
+        L.append("Runs without a run directory:")
+        L.append("")
+        L += _table(["run", "reason"], [[m["run_id"], m["reason"]] for m in missing_runs])
+        L.append("")
     if excluded:
         L.append("Directories not used (`excluded_runs.json`):")
         L.append("")
@@ -689,7 +705,10 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
 
     # ---- calibration
     L += ["## Calibration", ""]
-    if calibration is None:
+    if calibration is None and calibration_problem:
+        L.append(f"`results/calibration.json` not used: {calibration_problem}.")
+        notes.append(f"calibration section: results/calibration.json {calibration_problem}")
+    elif calibration is None:
         L.append("`results/calibration.json` not found.")
         notes.append("calibration section: results/calibration.json not found")
     else:
@@ -738,15 +757,81 @@ def _read_scripted(path) -> pd.DataFrame:
     return pd.read_csv(path, dtype=str, keep_default_na=False)
 
 
-def analyze(results_root, out_dir, scripted_csv=None) -> Path:
+def read_json_object(path) -> tuple[dict | None, str | None]:
+    """``(content, None)`` for a JSON object file; ``(None, None)`` when it does not exist; ``(None,
+    problem)`` when it cannot be read, is not valid JSON or is not a JSON object."""
+    path = Path(path)
+    if not path.exists():
+        return None, None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return None, f"cannot be read ({type(exc).__name__})"
+    except ValueError:
+        return None, "is not valid JSON"
+    if not isinstance(data, dict):
+        return None, f"is not a JSON object (a {type(data).__name__})"
+    return data, None
+
+
+_RUN_DIR_NAME = re.compile(r"_(?P<cond>[a-z]+)_s(?P<seed>\d+)(?:_\d+)?$")
+
+
+def _dir_run_ids(results_root) -> set[str]:
+    """``<condition>_s<seed>`` of every directory under the results root, from its name."""
+    root = Path(results_root)
+    out = set()
+    if root.is_dir():
+        for d in root.iterdir():
+            m = _RUN_DIR_NAME.search(d.name) if d.is_dir() else None
+            if m:
+                out.add(f"{m['cond']}_s{int(m['seed'])}")
+    return out
+
+
+def missing_runs(results_root, stop_json: dict | None, plan: dict | None) -> list[dict]:
+    """Runs with no directory at all under ``results_root``: those ``STOP.json`` lists in
+    ``runs_not_started``, then the rows of ``plan`` (``config/run_plan.json``: R, include_rotation)
+    never launched, each with a reason. [{"run_id", "reason"}]."""
+    present = _dir_run_ids(results_root)
+    out, seen = [], set()
+    listed = (stop_json or {}).get("runs_not_started")
+    for x in listed if isinstance(listed, (list, tuple)) else []:
+        rid = str(x)
+        if rid not in present and rid not in seen:
+            seen.add(rid)
+            out.append({"run_id": rid, "reason": f"not started: launcher stop "
+                                                  f"({(stop_json or {}).get('reason') or 'no reason given'}, "
+                                                  "results/STOP.json)"})
+    if plan is not None:
+        try:
+            rows = config.run_plan({c: int(v) for c, v in dict(plan.get("R") or {}).items()},
+                                   bool(plan.get("include_rotation", True)))
+        except (TypeError, ValueError, AttributeError):
+            rows = []
+        for c in rows:
+            rid = f"{c.condition}_s{c.seed}"
+            if rid not in present and rid not in seen:
+                seen.add(rid)
+                out.append({"run_id": rid, "reason": "planned in config/run_plan.json but no run directory "
+                                                      "(not launched: sizing rule, time ladder or launch "
+                                                      "not yet run)"})
+    return out
+
+
+def analyze(results_root, out_dir, scripted_csv=None, *, include_synthetic: bool = False, frozen_path=None,
+            plan_path=None) -> Path:
     """Evaluate ``results_root`` and write every §4g analysis file into ``out_dir`` (which must be new or
-    empty) plus ``results_root.parent / "README.md"``. Returns ``out_dir``."""
+    empty) plus ``results_root.parent / "README.md"``. Returns ``out_dir``. ``include_synthetic``,
+    ``frozen_path`` and ``plan_path`` select runs as in ``evaluation.evaluate``; ``plan_path`` also
+    lists the planned runs without a directory."""
     results_root, out_dir = Path(results_root), Path(out_dir)
     if out_dir.exists() and any(out_dir.iterdir()):
         raise FileExistsError(f"{out_dir} is not empty; analysis never overwrites")
     out_dir.mkdir(parents=True, exist_ok=True)
     eval_dir = out_dir / "evaluation"
-    pair_eval, run_eval = evaluation.evaluate(results_root, eval_dir)
+    pair_eval, run_eval = evaluation.evaluate(results_root, eval_dir, include_synthetic=include_synthetic,
+                                              frozen_path=frozen_path, plan_path=plan_path)
     excluded = json.loads((eval_dir / "excluded_runs.json").read_text(encoding="utf-8"))
 
     thresholds = control_thresholds(pair_eval)
@@ -759,14 +844,19 @@ def analyze(results_root, out_dir, scripted_csv=None) -> Path:
     figure = control_distribution_figure(pair_eval[is_ctrl] if len(pair_eval) else pair_eval,
                                          pair_eval[~is_ctrl] if len(pair_eval) else pair_eval,
                                          out_dir / "control_distributions.png", thresholds)
-    stop_path = results_root.parent / "STOP.json"
-    stop_json = json.loads(stop_path.read_text(encoding="utf-8")) if stop_path.is_file() else None
+    input_notes = []
+    stop_json, stop_problem = read_json_object(results_root.parent / "STOP.json")
+    if stop_problem:
+        input_notes.append(f"stop reasons from results/STOP.json: the file {stop_problem}; treated as absent")
     stop_reasons = {}
     for r in (run_eval.to_dict("records") if len(run_eval) else []):
         if _isnan(r["complete"]) or int(r["complete"]) != 1:
             stop_reasons[r["run_id"]] = stop_reason(results_root / str(r["run_dir"]), r["run_id"], stop_json)
-    cal_path = results_root.parent / "calibration.json"
-    calibration = json.loads(cal_path.read_text(encoding="utf-8")) if cal_path.is_file() else None
+    calibration, cal_problem = read_json_object(results_root.parent / "calibration.json")
+    plan = evaluation.read_plan_file(plan_path) if plan_path is not None else None
+    if plan_path is not None and plan is None and Path(plan_path).exists():
+        input_notes.append("planned runs without a directory: config/run_plan.json is unreadable")
+    absent = missing_runs(results_root, stop_json, plan)
 
     _write(out_dir / "flag_rates.csv", flags, FLAG_RATES_COLUMNS)
     _write(out_dir / "empirical_null.csv", null, EMPIRICAL_NULL_COLUMNS)
@@ -776,7 +866,8 @@ def analyze(results_root, out_dir, scripted_csv=None) -> Path:
                           robustness=robust, thresholds=thresholds, figure=figure, excluded=excluded,
                           calibration=calibration, scripted_given=scripted is not None,
                           results_root=results_root.as_posix(), analysis_dir=out_dir.as_posix(),
-                          stop_reasons=stop_reasons)
+                          stop_reasons=stop_reasons, missing_runs=absent, input_notes=input_notes,
+                          calibration_problem=cal_problem)
     for path in (out_dir / "README.md", results_root.parent / "README.md"):
         path.write_text(text, encoding="utf-8", newline="\n")
     return out_dir
@@ -789,10 +880,14 @@ def main(argv=None) -> Path:
     ap.add_argument("--out", type=Path, default=None, help="output directory (default: a new results/analysis/<UTC>)")
     ap.add_argument("--scripted-csv", type=Path, default=None, help=f"{SCRIPTED_NAME} from python -m "
                                                                     "src.procurement.scripted")
-    args = ap.parse_args(argv)
-    out = args.out if args.out is not None else evaluation.new_out_dir(ANALYSIS_ROOT)
-    analyze(args.results_root, out, scripted_csv=args.scripted_csv)
-    print(f"analysis -> {out}; README -> {args.results_root.parent / 'README.md'}")
+    evaluation.add_selection_args(ap)
+    args = ap.parse_args(argv)  # relative paths resolve against the repository root
+    root = config.repo_path(args.results_root)
+    out = config.repo_path(args.out) if args.out is not None else evaluation.new_out_dir(config.repo_path(ANALYSIS_ROOT))
+    analyze(root, out, scripted_csv=None if args.scripted_csv is None else config.repo_path(args.scripted_csv),
+            include_synthetic=args.include_synthetic, frozen_path=config.repo_path(args.frozen),
+            plan_path=config.repo_path(args.plan))
+    print(f"analysis -> {out}; README -> {root.parent / 'README.md'}")
     return out
 
 

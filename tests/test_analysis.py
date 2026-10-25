@@ -65,7 +65,7 @@ def fx(tmp_path_factory):
         scripted = _scripted_fixture(scripted_csv)
         (base / "results" / "calibration.json").write_text(json.dumps(CALIBRATION), encoding="utf-8")
         out = base / "results" / "analysis" / "a"
-        ret = analyze(root, out, scripted_csv=scripted_csv)
+        ret = analyze(root, out, scripted_csv=scripted_csv, include_synthetic=True)
     pe = pd.read_csv(out / "evaluation" / "pair_eval.csv", keep_default_na=False, na_values=[""])
     re_ = pd.read_csv(out / "evaluation" / "run_eval.csv", keep_default_na=False, na_values=[""])
     return dict(base=base, root=root, dirs=dirs, out=out, ret=ret, scripted=scripted,
@@ -267,23 +267,30 @@ def test_readme(fx):
     assert "scripted_signatures.csv" in text and "cover_shadow" in text
 
 
+def _none(tmp_path) -> list[str]:
+    """CLI args: synthetic runs in, frozen-cost and plan-T selection off (files that do not exist)."""
+    return ["--include-synthetic", "--frozen", str(tmp_path / "none_frozen.json"),
+            "--plan", str(tmp_path / "none_plan.json")]
+
+
 def test_analysis_cli_and_no_overwrite(fx, tmp_path):
     out = tmp_path / "cli_out"
-    main(["--results-root", str(fx["root"]), "--out", str(out), "--scripted-csv", str(fx["scripted_csv"])])
+    main(["--results-root", str(fx["root"]), "--out", str(out), "--scripted-csv", str(fx["scripted_csv"]),
+          *_none(tmp_path)])
     for name in OUTPUTS:
         assert (out / name).is_file()
     assert _read(out / "flag_rates.csv").equals(_read(fx["out"] / "flag_rates.csv"))
     with pytest.raises(FileExistsError):
-        analyze(fx["root"], out)  # non-empty out dir
+        analyze(fx["root"], out, include_synthetic=True)  # non-empty out dir
     empty = tmp_path / "empty"
     empty.mkdir()
-    analyze(fx["root"], empty)  # an existing empty dir is fine
+    analyze(fx["root"], empty, include_synthetic=True)  # an existing empty dir is fine
     assert "scripted_signatures.csv was not given" in (empty / "README.md").read_text(encoding="utf-8")
     # the default --out is a fresh UTC directory under the analysis root
     analysis_root = tmp_path / "analysis_root"
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(analysis, "ANALYSIS_ROOT", str(analysis_root))
-        main(["--results-root", str(fx["root"])])
+        main(["--results-root", str(fx["root"]), *_none(tmp_path)])
     (made,) = list(analysis_root.iterdir())
     assert (made / "flag_rates.csv").is_file()
 
@@ -316,7 +323,7 @@ def test_incomplete_runs_in_analysis(fx, tmp_path):
         run(RunConfig(condition="control", seed=3), factory, results_root=root)
     assert exc.value.code == 3
     out = tmp_path / "results" / "analysis" / "x"
-    analyze(root, out)
+    analyze(root, out, include_synthetic=True)
 
     fr = pd.read_csv(out / "flag_rates.csv")
     assert set(fr.condition) == {"control"} and fr.n_runs.eq(1).all()
@@ -337,7 +344,7 @@ def test_incomplete_runs_in_analysis(fx, tmp_path):
             "utc": "2026-10-26T03:00:00+00:00", "runs_complete": ["control_s1"], "runs_incomplete": ["control_s3"]}
     (tmp_path / "results" / "STOP.json").write_text(json.dumps(stop), encoding="utf-8")
     out2 = tmp_path / "results" / "analysis" / "y"
-    analyze(root, out2)
+    analyze(root, out2, include_synthetic=True)
     text = (out2 / "README.md").read_text(encoding="utf-8")
     line = next(ln for ln in text.split("## Run inventory")[1].splitlines() if "control_s3" in ln)
     assert f"incomplete: {stop['reason']} (60 projects completed)" in line
@@ -389,10 +396,10 @@ def test_figure_df_approximate_with_missing_bid(fx, tmp_path):
     root.mkdir(parents=True)
     for run_id in ("control_s1", "control_s2"):
         d = shutil.copytree(fx["dirs"][run_id], root / fx["dirs"][run_id].name)
-        shutil.rmtree(d / "detector")  # evaluation re-runs the detector on the edited table
+        shutil.rmtree(d / "detector", ignore_errors=True)  # evaluation runs the detector on the edited table
     _blank_one_bid(root / fx["dirs"]["control_s1"].name, 50)
     out = tmp_path / "results" / "analysis" / "x"
-    analyze(root, out)
+    analyze(root, out, include_synthetic=True)
     pe = pd.read_csv(out / "evaluation" / "pair_eval.csv", keep_default_na=False, na_values=[""])
     prim = _prim(pe)
     assert (prim.n_joint < prim.usable_T).any()  # the missing bid reached the primary rows
@@ -453,22 +460,32 @@ def test_analysis_reads_allowed_files_only(fx, tmp_path):
                                                     encoding="utf-8")
     scripted_csv = tmp_path / "scripted_signatures.csv"
     shutil.copy(fx["scripted_csv"], scripted_csv)
+    plan = tmp_path / "config" / "run_plan.json"
+    plan.parent.mkdir()
+    plan.write_text(json.dumps({"R": {"control": 1, "cover": 1}, "include_rotation": True, "T": 40}),
+                    encoding="utf-8")
+    frozen = tmp_path / "config" / "frozen.json"
+    frozen.write_text(json.dumps({"cost": {"beta0": 0.90, "beta1": 0.08, "beta2": 0.17, "sigma_eps": 0.05}}),
+                      encoding="utf-8")
     out = tmp_path / "results" / "analysis" / "r"
     if not _HOOKED:
         sys.addaudithook(_audit)  # audit hooks cannot be removed; it records only while _OPENED is a list
         _HOOKED = True
     _OPENED = []
     try:
-        analyze(root, out, scripted_csv=scripted_csv)
+        analyze(root, out, scripted_csv=scripted_csv, include_synthetic=True, frozen_path=frozen,
+                plan_path=plan)
     finally:
         opened, _OPENED = _OPENED, None
     base = tmp_path.resolve()
     reads = {p.resolve() for p, reading in opened if reading and p.resolve().is_relative_to(base)}
     allowed = {"pair_stats.csv", "truth.csv", "bids.csv", "run_meta.json", "pair_eval.csv", "run_eval.csv",
-               "excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "STOP"}
+               "excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "STOP",
+               "run_plan.json", "frozen.json"}
     assert {p.name for p in reads} <= allowed, {p.name for p in reads} - allowed
     assert not any("transcripts" in p.parts for p in reads)
-    for name in ("excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "bids.csv"):
+    for name in ("excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "bids.csv",
+                 "run_plan.json", "frozen.json"):
         assert any(p.name == name for p in reads), name  # the monitor sees the reads it should
 
     fr = pd.read_csv(out / "flag_rates.csv")
@@ -476,3 +493,75 @@ def test_analysis_reads_allowed_files_only(fx, tmp_path):
     assert fr.loc[(fr.condition == "control") & (fr.spec == "tag"), "n_pairs"].eq(15).all()
     pw = pd.read_csv(out / "power_vs_T.csv")
     assert set(pw.usable_T) == {30}
+
+
+# ------------------------------------------------------------------ final review fix wave
+
+def test_stop_and_calibration_json_read_defensively(tmp_path):
+    """A3: an unreadable, invalid or non-object STOP.json / calibration.json is treated as absent and
+    named under "Not computed"; analysis does not crash."""
+    results = tmp_path / "results"
+    root = results / "runs"
+    with api_guard():
+        run(RunConfig(condition="control", seed=1, T=12), synthetic_bidder_factory, results_root=root)
+    cases = [("[1, 2]", "{not json", "is not a JSON object (a list)", "is not valid JSON"),
+             ("{not json", "[3]", "is not valid JSON", "is not a JSON object (a list)")]
+    for k, (stop_text, cal_text, stop_msg, cal_msg) in enumerate(cases):
+        (results / "STOP.json").write_text(stop_text, encoding="utf-8")
+        (results / "calibration.json").write_text(cal_text, encoding="utf-8")
+        out = results / "analysis" / f"d{k}"
+        analyze(root, out, include_synthetic=True)
+        notes = (out / "README.md").read_text(encoding="utf-8").split("## Not computed")[1]
+        assert f"results/STOP.json: the file {stop_msg}" in notes
+        assert f"calibration section: results/calibration.json {cal_msg}" in notes
+    # unreadable (a directory where the file should be)
+    (results / "STOP.json").unlink()
+    (results / "STOP.json").mkdir()
+    (results / "calibration.json").unlink()
+    (results / "calibration.json").mkdir()
+    out = results / "analysis" / "dir"
+    analyze(root, out, include_synthetic=True)
+    notes = (out / "README.md").read_text(encoding="utf-8").split("## Not computed")[1]
+    assert "results/STOP.json: the file cannot be read" in notes
+    assert "results/calibration.json cannot be read" in notes
+
+
+def test_readme_lists_runs_without_directory(tmp_path):
+    """B6: the run inventory lists STOP.json runs_not_started and the plan rows with no directory."""
+    results = tmp_path / "results"
+    root = results / "runs"
+    with api_guard():
+        run(RunConfig(condition="control", seed=1, T=12), synthetic_bidder_factory, results_root=root)
+    (results / "STOP.json").write_text(json.dumps({"reason": "spend", "runs_incomplete": [],
+                                                   "runs_not_started": ["cover_s2", "control_s1"]}),
+                                       encoding="utf-8")
+    plan = tmp_path / "run_plan.json"
+    plan.write_text(json.dumps({"R": {"control": 2, "cover": 2, "markup": 0, "rotation": 1},
+                                "include_rotation": False, "T": 12}), encoding="utf-8")
+    out = results / "analysis" / "a"
+    analyze(root, out, include_synthetic=True, plan_path=plan)
+    readme = (out / "README.md").read_text(encoding="utf-8")
+    inv = readme.split("## Run inventory")[1].split("## Flag rates")[0]
+    table = inv.split("Runs without a run directory:")[1]
+    rows = {ln.split("|")[1].strip(): ln.split("|")[2].strip() for ln in table.splitlines()
+            if ln.startswith("| ") and "---" not in ln and not ln.startswith("| run ")}
+    assert set(rows) == {"cover_s2", "control_s2", "cover_s1"}  # control_s1 has a directory; no rotation
+    assert rows["cover_s2"] == "not started: launcher stop (spend, results/STOP.json)"
+    assert rows["control_s2"].startswith("planned in config/run_plan.json but no run directory")
+    assert rows["cover_s1"].startswith("planned in config/run_plan.json")
+
+
+def test_analysis_cli_paths_resolve_against_repo_root(fx, tmp_path, monkeypatch):
+    """C4: relative --results-root and the default output root resolve against the repository root."""
+    from src.procurement import config
+    fake_repo = tmp_path / "repo"
+    src = fx["dirs"]["control_s1"]
+    shutil.copytree(src, fake_repo / "results" / "runs" / src.name)
+    monkeypatch.setattr(config, "repo_root", lambda: fake_repo)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    main(["--results-root", "results/runs", "--include-synthetic", "--frozen", "none.json", "--plan", "none.json"])
+    (made,) = list((fake_repo / "results" / "analysis").iterdir())
+    assert (made / "flag_rates.csv").is_file() and (fake_repo / "results" / "README.md").is_file()
+    assert not (elsewhere / "results").exists()

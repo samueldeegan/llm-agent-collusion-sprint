@@ -3,7 +3,8 @@
 The detector sees the regulator's view only: a run's ``bids.csv``. It writes ``detector/pair_stats.csv``
 (spec §4g), one row per pair x spec x usable_T reached.
 
-CLI: ``python -m src.procurement.detector --run-dir DIR [--T 110] [--N 6] [--burn-in 10]``.
+CLI: ``python -m src.procurement.detector --run-dir DIR [--T 110] [--N 6] [--burn-in 10]``; on an unfinished
+run (``io.run_dir_unfinished``: ``finished_utc`` null) it computes in memory and writes nothing.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from scipy import stats
 
 from src.procurement.auction import rival_covariates
 from src.procurement.config import load_defaults
-from src.procurement.io import PAIR_STATS_COLUMNS, read_bids, write_csv
+from src.procurement.io import PAIR_STATS_COLUMNS, read_bids, run_dir_unfinished, write_csv
 
 _DEFAULTS = load_defaults()
 T_DEFAULT = int(_DEFAULTS["T"])
@@ -262,6 +263,11 @@ def _typed(records: list[dict]) -> pd.DataFrame:
     return df
 
 
+def empty_pair_stats() -> pd.DataFrame:
+    """A typed pair_stats frame with no rows (a bid table with no project)."""
+    return _typed([])
+
+
 def detect_frames(bids_df: pd.DataFrame, run_id: str | None = None, specs=SPECS, usable_Ts=USABLE_TS,
                   burn_in: int = BURN_IN_DEFAULT, N: int = N_DEFAULT, T: int = T_DEFAULT) -> pd.DataFrame:
     """pair_stats rows (``PAIR_STATS_COLUMNS``) for a bid table: one per pair x spec x usable_T, only for
@@ -356,6 +362,11 @@ def main(argv=None) -> None:
     ap.add_argument("--N", type=int, default=N_DEFAULT, help="firms (for `complete` and project-FE rho0)")
     ap.add_argument("--burn-in", type=int, default=BURN_IN_DEFAULT)
     args = ap.parse_args(argv)
+    if run_dir_unfinished(args.run_dir):
+        df = detect_frames(load_bid_table(args.run_dir), None, burn_in=args.burn_in, N=args.N, T=args.T)
+        print(f"{len(df)} pair rows computed in memory; nothing written: {args.run_dir} is an unfinished run "
+              "(finished_utc is null)")
+        return
     df = detect_run(args.run_dir, burn_in=args.burn_in, N=args.N, T=args.T)
     print(f"{len(df)} pair rows -> {Path(args.run_dir) / 'detector' / 'pair_stats.csv'}")
 

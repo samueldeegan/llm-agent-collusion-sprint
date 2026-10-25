@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.procurement import evaluation, io
+from src.procurement import config, evaluation, io
 from src.procurement.config import CostParams
 from src.procurement.detector import A3_ALPHA, detect_frames
 from src.procurement.synthetic import simulate_table
@@ -145,12 +145,13 @@ def main(argv=None) -> Path:
                     help="a .csv path, or a directory for scripted_signatures.csv "
                          "(default: a new results/analysis/<UTC>/)")
     args = ap.parse_args(argv)
-    if args.out is None:
-        path = evaluation.new_out_dir(ANALYSIS_ROOT) / OUTPUT_NAME
-    elif args.out.suffix.lower() == ".csv":
-        path = args.out
+    out = None if args.out is None else config.repo_path(args.out)  # relative: against the repository root
+    if out is None:
+        path = evaluation.new_out_dir(config.repo_path(ANALYSIS_ROOT)) / OUTPUT_NAME
+    elif out.suffix.lower() == ".csv":
+        path = out
     else:
-        path = args.out / OUTPUT_NAME
+        path = out / OUTPUT_NAME
     if path.exists():  # before the (slow) simulation
         raise FileExistsError(f"{path} exists; scripted signatures are never overwritten")
     df = run_scripted(seeds=args.seeds, extra_margin=args.extra_margin)

@@ -126,8 +126,8 @@ def _typed_frame(path, str_columns, int_columns, nullable_int: bool) -> pd.DataF
         elif col in int_columns:
             out[col] = (pd.to_numeric(s.replace("", np.nan)).astype("Int64") if nullable_int
                         else s.astype("int64"))
-        else:
-            out[col] = pd.to_numeric(s.replace("", np.nan)).astype("float64")
+        else:  # Python float parsing: a value written with repr reads back bit for bit
+            out[col] = s.replace("", np.nan).astype("float64")
     return out
 
 
@@ -189,6 +189,20 @@ def write_run_meta(run_dir, meta: dict) -> None:
 
 def read_run_meta(run_dir) -> dict:
     return json.loads(Path(run_dir, "run_meta.json").read_text(encoding="utf-8"))
+
+
+def run_dir_unfinished(run_dir) -> bool:
+    """True when ``run_dir`` holds a ``run_meta.json`` whose ``finished_utc`` is null (a run still being
+    written, or stopped), or one that cannot be read; False without a run_meta.json. Nothing may write
+    a ``pair_stats.csv`` into such a directory: a later read would take a partial table for the final one."""
+    path = Path(run_dir, "run_meta.json")
+    if not path.is_file():
+        return False
+    try:
+        meta = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    return not isinstance(meta, dict) or meta.get("finished_utc") is None
 
 
 # ---------------------------------------------------------------- heartbeat

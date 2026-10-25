@@ -91,3 +91,18 @@ def test_scripted_extra_margin_and_determinism():
     # n counts pairs; rate is n_flagged / n
     k = a["rate"] * a["n"]
     assert np.allclose(k, k.round())
+
+
+def test_cli_relative_out_resolves_against_repo_root(tmp_path, monkeypatch):
+    """C4: a relative --out (and the default analysis root) resolve against the repository root."""
+    from src.procurement import config
+    fake_repo = tmp_path / "repo"
+    monkeypatch.setattr(config, "repo_root", lambda: fake_repo)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    path = main(["--seeds", "1", "--out", "results/analysis/x/scripted_signatures.csv"])
+    assert path == fake_repo / "results" / "analysis" / "x" / "scripted_signatures.csv" and path.is_file()
+    path2 = main(["--seeds", "1"])
+    assert path2.parent.parent == fake_repo / "results" / "analysis"
+    assert not (elsewhere / "results").exists()

@@ -15,6 +15,7 @@ from src.procurement.config import RunConfig
 from src.procurement.evaluation import (PAIR_EVAL_COLUMNS, RUN_EVAL_COLUMNS, a1_rank1, a3_top2, evaluate,
                                         filter_by_fidelity, main, pair_class, select_run_dirs)
 from src.procurement.fidelity import profit_delta
+from src.procurement.detector import detect_run
 from src.procurement.io import PAIR_STATS_COLUMNS, read_run_meta
 from src.procurement.runner import run
 from src.procurement.synthetic import SyntheticBidder, synthetic_bidder_factory
@@ -32,13 +33,16 @@ VERDICT_COLUMNS = ["verdict_usable_T", "a1_rank1_by_abs_r", "a3_top2", "cartel_r
 
 @pytest.fixture(scope="module")
 def evaluated(tmp_path_factory):
-    """Seed 1 of every condition, run into a fresh results root and evaluated once."""
+    """Seed 1 of every condition, run into a fresh results root, each finished run's pair_stats written by
+    the detector (as its CLI does), and evaluated once."""
     root = tmp_path_factory.mktemp("runs")
     out = tmp_path_factory.mktemp("evaluation") / "out"
     with api_guard():  # the function-scoped guard is not active in module fixtures
         dirs = {c: run(RunConfig(condition=c, seed=1), synthetic_bidder_factory, results_root=root)
                 for c in CONDITIONS}
-        pair_eval, run_eval = evaluate(root, out)
+        for d in dirs.values():
+            detect_run(d, T=110, N=6, burn_in=10)
+        pair_eval, run_eval = evaluate(root, out, include_synthetic=True)
     return dict(root=root, out=out, dirs=dirs, pair_eval=pair_eval, run_eval=run_eval)
 
 
@@ -53,7 +57,7 @@ def _copy_run(src: Path, root: Path, name: str | None = None, keep_detector: boo
     dst = root / (name or src.name)
     shutil.copytree(src, dst)
     if not keep_detector:
-        shutil.rmtree(dst / "detector")
+        shutil.rmtree(dst / "detector", ignore_errors=True)
     return dst
 
 
@@ -176,7 +180,7 @@ def test_evaluate_outputs(evaluated):
     assert json.loads((out / "excluded_runs.json").read_text(encoding="utf-8")) == []
     assert sorted(re_.run_id) == sorted(f"{c}_s1" for c in CONDITIONS)
     for cond, d in evaluated["dirs"].items():
-        assert (d / "detector" / "pair_stats.csv").is_file()  # evaluation ran the detector
+        assert (d / "detector" / "pair_stats.csv").is_file()  # written by the detector, used as current
         row = _run_row(re_, f"{cond}_s1")
         assert row["run_dir"] == d.name
         assert row["complete"] == 1 and row["projects_completed"] == 110
@@ -242,24 +246,47 @@ def test_evaluate_csv_round_trip(evaluated):
 
 def test_evaluate_never_overwrites(evaluated):
     with pytest.raises(FileExistsError):
-        evaluate(evaluated["root"], evaluated["out"])
+        evaluate(evaluated["root"], evaluated["out"], include_synthetic=True)
+
+
+def _none(tmp_path) -> list[str]:
+    """CLI args that switch the frozen-cost and plan-T selection off (files that do not exist)."""
+    return ["--include-synthetic", "--frozen", str(tmp_path / "none_frozen.json"),
+            "--plan", str(tmp_path / "none_plan.json")]
 
 
 def test_evaluate_cli(evaluated, tmp_path, monkeypatch):
     out = tmp_path / "explicit"
-    main(["--results-root", str(evaluated["root"]), "--out", str(out)])
+    main(["--results-root", str(evaluated["root"]), "--out", str(out), *_none(tmp_path)])
     assert (out / "run_eval.csv").is_file() and (out / "pair_eval.csv").is_file()
     assert (out / "excluded_runs.json").is_file()
+    assert len(_read_csv(out / "run_eval.csv")) == 4
     with pytest.raises(FileExistsError):
-        main(["--results-root", str(evaluated["root"]), "--out", str(out)])
-    # default: a new UTC-stamped directory under results/evaluation, never an existing one
-    monkeypatch.chdir(tmp_path)
-    main(["--results-root", str(evaluated["root"])])
-    main(["--results-root", str(evaluated["root"])])
+        main(["--results-root", str(evaluated["root"]), "--out", str(out), *_none(tmp_path)])
+    # default: a new UTC-stamped directory under the evaluation root, never an existing one
+    monkeypatch.setattr("src.procurement.evaluation.EVALUATION_ROOT", str(tmp_path / "results" / "evaluation"))
+    main(["--results-root", str(evaluated["root"]), *_none(tmp_path)])
+    main(["--results-root", str(evaluated["root"]), *_none(tmp_path)])
     made = sorted(p for p in (tmp_path / "results" / "evaluation").iterdir() if p.is_dir())
     assert len(made) == 2
     for p in made:
         assert (p / "run_eval.csv").is_file()
+
+
+def test_evaluate_cli_paths_resolve_against_repo_root(evaluated, tmp_path, monkeypatch):
+    """C4: relative --results-root and the default output root resolve against the repository root, not
+    the working directory."""
+    from src.procurement import config
+    fake_repo = tmp_path / "repo"
+    shutil.copytree(evaluated["dirs"]["control"], fake_repo / "results" / "runs" / evaluated["dirs"]["control"].name)
+    monkeypatch.setattr(config, "repo_root", lambda: fake_repo)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    main(["--results-root", "results/runs", "--include-synthetic", "--frozen", "none.json", "--plan", "none.json"])
+    (made,) = list((fake_repo / "results" / "evaluation").iterdir())
+    assert len(_read_csv(made / "run_eval.csv")) == 1
+    assert not (elsewhere / "results").exists()
 
 
 # ------------------------------------------------------------------ fidelity filter
@@ -312,8 +339,8 @@ _HOOKED = False
 def test_evaluation_reads_allowed_files_only(evaluated, tmp_path):
     global _OPENED, _HOOKED
     root = tmp_path / "runs"
-    for cond in ("control", "cover"):
-        d = _copy_run(evaluated["dirs"][cond], root)  # no pair_stats: evaluation runs the detector
+    for cond in ("control", "cover"):  # control keeps its current pair_stats; cover has none (in memory)
+        d = _copy_run(evaluated["dirs"][cond], root, keep_detector=cond == "control")
         (d / "transcripts").mkdir(exist_ok=True)
         (d / "transcripts" / "Somebody.md").write_text("prompt", encoding="utf-8")
     run_dirs = [p for p in root.iterdir() if p.is_dir()]
@@ -325,7 +352,7 @@ def test_evaluation_reads_allowed_files_only(evaluated, tmp_path):
         _HOOKED = True
     _OPENED = []
     try:
-        evaluate(root, tmp_path / "out")
+        evaluate(root, tmp_path / "out", include_synthetic=True)
     finally:
         opened, _OPENED = _OPENED, None
     root_r = root.resolve()
@@ -335,7 +362,9 @@ def test_evaluation_reads_allowed_files_only(evaluated, tmp_path):
     assert names <= allowed, names - allowed
     for d in run_dirs:  # the monitor sees the reads it should
         seen = {p for p in inside if p.parent in (d.resolve(), (d / "detector").resolve())}
-        assert {p.name for p in seen} == {"bids.csv", "truth.csv", "run_meta.json", "pair_stats.csv"}
+        expected = {"bids.csv", "truth.csv", "run_meta.json"}
+        assert {p.name for p in seen} == (expected | {"pair_stats.csv"} if "control" in d.name else expected)
+    assert not (next(d for d in run_dirs if "cover" in d.name) / "detector").exists()  # nothing written
     forbidden = {"messages.csv", "calls.csv", "checkpoint.json", "heartbeat.json"}
     assert not any(p.name in forbidden or "transcripts" in p.parts for p in inside)
 
@@ -367,7 +396,7 @@ def test_incomplete_run_in_evaluation(tmp_path):
             run(RunConfig(condition=cond, seed=1), lambda c, e: _StopAt(c, e, root, 60), results_root=root)
     for d in root.iterdir():
         assert read_run_meta(d)["finished_utc"] is None
-    pe, re_ = evaluate(root, tmp_path / "out")
+    pe, re_ = evaluate(root, tmp_path / "out", include_synthetic=True)
     ctrl = _run_row(re_, "control_s1")
     assert ctrl["complete"] == 0 and ctrl["projects_completed"] == 60
     sub = pe[pe.run_id == "control_s1"]
@@ -387,7 +416,7 @@ def test_detector_gets_T_N_burn_in_from_run_meta(tmp_path):
     """A finished T = 60 run is complete: evaluation passes run_meta's T, N and burn_in to the detector."""
     root = tmp_path / "runs"
     run(RunConfig(condition="control", seed=2, T=60), synthetic_bidder_factory, results_root=root)
-    pe, re_ = evaluate(root, tmp_path / "out")
+    pe, re_ = evaluate(root, tmp_path / "out", include_synthetic=True)
     row = _run_row(re_, "control_s2")
     assert row["complete"] == 1 and row["projects_completed"] == 60
     assert set(pe.loc[pe.primary == 1, "usable_T"]) == {50} and set(pe.complete) == {1}
@@ -400,17 +429,17 @@ def test_finished_utc_required_for_complete(evaluated, tmp_path):
     meta = read_run_meta(d)
     meta["finished_utc"] = None
     io.write_run_meta(d, meta)
-    pe, re_ = evaluate(root, tmp_path / "out")
+    pe, re_ = evaluate(root, tmp_path / "out", include_synthetic=True)
     assert _run_row(re_, "control_s1")["complete"] == 0 and set(pe.complete) == {0}
-    ps = _read_csv(d / "detector" / "pair_stats.csv")
-    assert set(ps.complete) == {"1"}
+    assert set(pe.loc[pe.primary == 1, "usable_T"]) == {100}  # the detector itself saw T x N rows
+    assert not (d / "detector").exists()  # nothing is written into an unfinished run (B1)
 
 
 def _meta_dir(root: Path, name: str, purpose="experiment", condition="control", seed=1,
-              started="2026-10-25T10:00:00+00:00", finished=None) -> Path:
+              started="2026-10-25T10:00:00+00:00", finished=None, bidder="llm") -> Path:
     d = root / name
     d.mkdir(parents=True)
-    io.write_run_meta(d, {"purpose": purpose, "condition": condition, "seed": seed,
+    io.write_run_meta(d, {"purpose": purpose, "condition": condition, "seed": seed, "bidder": bidder,
                           "started_utc": started, "finished_utc": finished})
     return d
 
@@ -430,9 +459,10 @@ def test_latest_finished_wins(tmp_path):
     (root / "stray.txt").write_text("x", encoding="utf-8")
     selected, skipped = select_run_dirs(root)
     assert selected == {"control_s1": b, "cover_s1": e}
-    assert {Path(s["dir"]).name for s in skipped} == {a.name, c.name, d.name}
+    assert {Path(s["dir"]).name for s in skipped} == {a.name, c.name, d.name, "not_a_run"}
     for s in skipped:
         assert s["reason"]
+    assert [s["reason"] for s in skipped if s["dir"].endswith("not_a_run")] == ["no run_meta.json"]
 
 
 def test_latest_finished_wins_in_evaluate(evaluated, tmp_path):
@@ -443,7 +473,7 @@ def test_latest_finished_wins_in_evaluate(evaluated, tmp_path):
     meta = read_run_meta(first)
     meta["finished_utc"] = "2000-01-01T00:00:00+00:00"
     io.write_run_meta(first, meta)
-    pe, re_ = evaluate(root, tmp_path / "out")
+    pe, re_ = evaluate(root, tmp_path / "out", include_synthetic=True)
     assert list(re_.run_dir) == [second.name]
     excluded = json.loads((tmp_path / "out" / "excluded_runs.json").read_text(encoding="utf-8"))
     assert [Path(x["dir"]).name for x in excluded] == [first.name]
@@ -464,7 +494,138 @@ def test_calibration_runs_excluded(tmp_path):
     assert "smoke" in skipped[0]["reason"]
     assert pilot not in selected.values()
     # pointed at results/, nothing (neither runs/ nor calibration_runs/ holds a run_meta.json itself)
-    assert select_run_dirs(results) == ({}, [])
+    sel, sk = select_run_dirs(results)
+    assert sel == {} and {(Path(s["dir"]).name, s["reason"]) for s in sk} == {
+        ("runs", "no run_meta.json"), ("calibration_runs", "no run_meta.json")}
     # pointed at the calibration root, the pilot is still skipped for its purpose
     sel, sk = select_run_dirs(calib)
     assert sel == {} and [Path(s["dir"]).name for s in sk] == [pilot.name]
+
+
+# ------------------------------------------------------------------ final review fix wave
+
+def test_stale_pair_stats_recomputed(evaluated, tmp_path):
+    """B1: the reviewer's reproduction, a finished 110-project run whose stored pair_stats came from its
+    first 60 projects (newer than bids.csv), evaluates complete with the full null; a pair_stats older
+    than bids.csv is recomputed too. Nothing is written into the run directories."""
+    import os
+    from src.procurement import detector
+    from src.procurement.analysis import control_thresholds
+    root = tmp_path / "runs"
+    d = _copy_run(evaluated["dirs"]["control"], root)
+    bids = io.read_bids(d)
+    short = detector.detect_frames(bids[bids.project_id <= 60], None, burn_in=10, N=6, T=110)
+    detector.write_pair_stats(d, short)
+    ps_path = d / "detector" / "pair_stats.csv"
+    t = (d / "bids.csv").stat().st_mtime
+    os.utime(ps_path, (t + 10, t + 10))
+    before = ps_path.read_bytes()
+    pe, re_ = evaluate(root, tmp_path / "out", include_synthetic=True)
+    row = _run_row(re_, "control_s1")
+    assert row["complete"] == 1 and row["projects_completed"] == 110
+    assert set(pe.usable_T) == {30, 50, 70, 100} and set(pe.complete) == {1}
+    thr = control_thresholds(pe)
+    assert set(thr) == {("tag", "A1"), ("tag", "A3"), ("project_fe", "A1"), ("project_fe", "A3")}
+    assert ps_path.read_bytes() == before  # the run dir is never rewritten
+
+    # mtime: a full-length pair_stats older than bids.csv is not trusted
+    root2 = tmp_path / "runs2"
+    d2 = _copy_run(evaluated["dirs"]["control"], root2, keep_detector=True)
+    ps2 = d2 / "detector" / "pair_stats.csv"
+    tampered = _read_csv(ps2)
+    tampered["r"] = "0.999"
+    tampered.to_csv(ps2, index=False, lineterminator="\n")
+    os.utime(ps2, (t - 100, t - 100))
+    pe2, _ = evaluate(root2, tmp_path / "out2", include_synthetic=True)
+    assert (pe2["r"] != 0.999).all()
+    pd.testing.assert_frame_equal(pe2.reset_index(drop=True), evaluated["pair_eval"][
+        evaluated["pair_eval"].run_id == "control_s1"].reset_index(drop=True))
+
+    # current: a stored pair_stats newer than bids.csv with the right rows is used as it is
+    os.utime(ps2, (t + 100, t + 100))
+    pe3, _ = evaluate(root2, tmp_path / "out3", include_synthetic=True)
+    assert (pe3["r"] == 0.999).all()
+
+
+def test_zero_project_run(evaluated, tmp_path):
+    """B2: a scheme run with a header-only bids.csv gets a run_eval row (projects_completed 0, no
+    fidelity, rule, profit or verdicts) and is kept out of the tables; dirs without run_meta.json or
+    bids.csv are listed in excluded_runs.json with a reason."""
+    from src.procurement.analysis import flag_rates, control_thresholds
+    root = tmp_path / "runs"
+    _copy_run(evaluated["dirs"]["control"], root)
+    _copy_run(evaluated["dirs"]["cover"], root)
+    with api_guard():
+        cover2 = run(RunConfig(condition="cover", seed=2, T=110), synthetic_bidder_factory, results_root=root)
+    for name, cols in (("bids.csv", io.BIDS_COLUMNS), ("truth.csv", io.TRUTH_COLUMNS)):
+        io.write_csv(cover2 / name, [], cols)  # header only: no project completed
+    meta = read_run_meta(cover2)
+    meta["finished_utc"] = None
+    io.write_run_meta(cover2, meta)
+    (root / "20261025_000000_markup_s9").mkdir()  # no run_meta.json
+    nob = _copy_run(evaluated["dirs"]["rotation"], root)
+    (nob / "bids.csv").unlink()  # no bids.csv
+    bad = root / "20261025_000001_markup_s8"
+    bad.mkdir()
+    (bad / "run_meta.json").write_text("{not json", encoding="utf-8")
+    out = tmp_path / "out"
+    pe, re_ = evaluate(root, out, include_synthetic=True)
+    assert sorted(re_.run_id) == ["control_s1", "cover_s1", "cover_s2"]
+    z = _run_row(re_, "cover_s2")
+    assert z["projects_completed"] == 0 and z["complete"] == 0 and z["n_missing_bids"] == 0
+    for c in ["fidelity", "b_own", "b_partner", "n_cover", "median_margin_raw", "median_margin_excess",
+              "cartel_profit", "matched_control_profit", "profit_delta", "mean_bid_over_est",
+              "sd_bid_over_est"] + VERDICT_COLUMNS:
+        assert _empty(z[c]), c
+    assert z["realized_rule"] == "n/a"
+    assert "cover_s2" not in set(pe.run_id)
+    fr = flag_rates(pe, control_thresholds(pe))
+    assert set(fr.condition) == {"control", "cover"}
+    assert (fr.loc[(fr.condition == "cover") & (fr.pair_class == "cartel"), "n_runs"] == 1).all()
+    excluded = {Path(e["dir"]).name: e["reason"]
+                for e in json.loads((out / "excluded_runs.json").read_text(encoding="utf-8"))}
+    assert excluded["20261025_000000_markup_s9"] == "no run_meta.json"
+    assert excluded[nob.name] == "rotation_s1: no bids.csv"
+    assert excluded[bad.name].startswith("run_meta.json unreadable")
+    raw = _read_csv(out / "run_eval.csv")
+    assert raw.loc[raw.run_id == "cover_s2", "projects_completed"].item() == "0"
+
+
+def test_selection_by_bidder_cost_and_T(evaluated, tmp_path):
+    """B3: by default only LLM runs are evaluated; with frozen.json and run_plan.json, only runs at the
+    frozen cost and the plan's T (or the ladder's 80); every other run is excluded with the reason."""
+    root = tmp_path / "runs"
+    synth = _copy_run(evaluated["dirs"]["control"], root)  # bidder synthetic
+    llm = _copy_run(evaluated["dirs"]["cover"], root)
+    meta = read_run_meta(llm)
+    meta["bidder"] = "llm"
+    io.write_run_meta(llm, meta)
+    pe, re_ = evaluate(root, tmp_path / "o1")
+    assert list(re_.run_id) == ["cover_s1"]
+    ex = json.loads((tmp_path / "o1" / "excluded_runs.json").read_text(encoding="utf-8"))
+    assert [Path(e["dir"]).name for e in ex] == [synth.name] and "synthetic" in ex[0]["reason"]
+    _, re_ = evaluate(root, tmp_path / "o2", include_synthetic=True)
+    assert sorted(re_.run_id) == ["control_s1", "cover_s1"]
+
+    frozen = tmp_path / "frozen.json"
+    frozen.write_text(json.dumps({"cost": {"beta0": 0.93, "beta1": 0.08, "beta2": 0.17, "sigma_eps": 0.05}}),
+                      encoding="utf-8")
+    _, re_ = evaluate(root, tmp_path / "o3", include_synthetic=True, frozen_path=frozen)
+    assert re_.empty
+    ex = json.loads((tmp_path / "o3" / "excluded_runs.json").read_text(encoding="utf-8"))
+    assert len(ex) == 2 and all("frozen.json" in e["reason"] and "beta0" in e["reason"] for e in ex)
+    frozen.write_text(json.dumps({"cost": {"beta0": 0.90, "beta1": 0.08, "beta2": 0.17, "sigma_eps": 0.05}}),
+                      encoding="utf-8")
+    plan = tmp_path / "run_plan.json"
+    plan.write_text(json.dumps({"R": {"control": 1, "cover": 1}, "T": 60}), encoding="utf-8")
+    _, re_ = evaluate(root, tmp_path / "o4", include_synthetic=True, frozen_path=frozen, plan_path=plan)
+    assert re_.empty
+    ex = json.loads((tmp_path / "o4" / "excluded_runs.json").read_text(encoding="utf-8"))
+    assert all("T 110 does not match the plan" in e["reason"] for e in ex)
+    plan.write_text(json.dumps({"R": {"control": 1, "cover": 1}, "T": 110}), encoding="utf-8")
+    _, re_ = evaluate(root, tmp_path / "o5", include_synthetic=True, frozen_path=frozen, plan_path=plan)
+    assert sorted(re_.run_id) == ["control_s1", "cover_s1"]
+    # files that do not exist: no cost or T check
+    _, re_ = evaluate(root, tmp_path / "o6", include_synthetic=True, frozen_path=tmp_path / "x.json",
+                      plan_path=tmp_path / "y.json")
+    assert len(re_) == 2

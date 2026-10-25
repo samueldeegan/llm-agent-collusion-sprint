@@ -457,3 +457,19 @@ def test_detector_reads_only_bids(tmp_path, monkeypatch):
     assert (d / "detector" / "pair_stats.csv").read_bytes() == first
     tbl = load_bid_table(d)
     assert len(tbl) == 240
+
+
+def test_cli_never_writes_into_unfinished_run(tmp_path, capsys):
+    """B1: on a run dir whose run_meta has finished_utc null the CLI computes in memory, writes nothing."""
+    import json as _json
+    d = run(RunConfig(condition="control", seed=1, T=40), synthetic_bidder_factory, results_root=tmp_path)
+    meta = _json.loads((d / "run_meta.json").read_text(encoding="utf-8"))
+    meta["finished_utc"] = None
+    (d / "run_meta.json").write_text(_json.dumps(meta), encoding="utf-8")
+    detector.main(["--run-dir", str(d), "--T", "40"])
+    assert not (d / "detector").exists()
+    assert "nothing written" in capsys.readouterr().out
+    meta["finished_utc"] = "2026-10-25T12:00:00+00:00"
+    (d / "run_meta.json").write_text(_json.dumps(meta), encoding="utf-8")
+    detector.main(["--run-dir", str(d), "--T", "40"])
+    assert (d / "detector" / "pair_stats.csv").is_file()
