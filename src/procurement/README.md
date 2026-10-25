@@ -49,19 +49,25 @@ Keys are read from the environment only. Step order matters.
    Other flags: `--results-dir`, `--config-dir`, `--seeds 100`, `--skip-scripted`.
    Writes a run under `results/calibration_runs/`, `cover_smoke_prefreeze` and `measured` in
    `calibration.json`, and (unless `--skip-scripted`) `results/analysis/<UTC>/scripted_signatures.csv`.
-   Exit 0: proceed (an "insufficient" rule is a finding, not a stop). 3: STOP, realized rule is
-   shadow or fidelity < 0.5; do not run the pilot. 5: key problem.
+   Exit 0: proceed (an "insufficient" rule is a finding, not a stop). 1: the scripted-signatures
+   step failed; the run's numbers are already recorded, so rerun the offline command the script prints,
+   `python -m src.procurement.scripted --seeds N [--extra-margin X]`. 3: STOP, realized rule is shadow
+   or fidelity < 0.5; do not run the pilot (3 wins even if the scripted step also failed). 5: key problem.
 3. Pilot (120 calls per pilot, at most 3 pilots, at most 360): `.venv\Scripts\python.exe scripts\pilot.py`
    Flags: `--results-dir`, `--config-dir`, `--decisions`. Loops on beta0 until the mean bid/EST of
    projects 11-20 is in [1.00, 1.10]. Writes `config/frozen.json`, appends a line to
    `docs/superpowers/DECISIONS.md`, writes the `pilot` section. Exit 0: frozen. 3: STOP (parse rate
-   < 0.95, or frozen m outside [0.95, 1.15]; no `frozen.json`). 5: bad key, or `frozen.json` exists.
+   < 0.95, or frozen m outside [0.95, 1.15]; no `frozen.json`). 5: bad key, `frozen.json` exists, or
+   `calibration.json` is unreadable.
 4. Cover smoke, postfreeze (80 calls):
    `.venv\Scripts\python.exe scripts\cover_smoke.py --phase postfreeze`
    Runs at the frozen parameters; writes `cover_smoke_postfreeze` and `measured` (these now win) and a
-   new `scripted_signatures.csv` (pass it to analysis as `--scripted-csv`). Exit 0 (even on shadow or
-   low fidelity; it prints a WARNING). 5: `config/frozen.json` missing or key problem.
-   If the time ladder forces skipping it: `scripts\cover_smoke.py --note-skip-postfreeze` (no API, exit 0).
+   new `scripted_signatures.csv` (pass it to analysis as `--scripted-csv`). Exit 0 (also on shadow or
+   low fidelity: it prints a WARNING and does not stop). 1: the scripted-signatures step failed; the
+   run's numbers are already recorded, so rerun the offline `python -m src.procurement.scripted
+   --seeds N [--extra-margin X]` the script prints. 5: `config/frozen.json` missing or key problem.
+   If the time ladder forces skipping it: `scripts\cover_smoke.py --note-skip-postfreeze` (no API, exit 0;
+   exit 5 when there is no prefreeze record or a real postfreeze measurement already exists).
 5. Tier check (1 call per key): `.venv\Scripts\python.exe scripts\tier_check.py [--results-dir results]`
    Slot 1 uses `ANTHROPIC_API_KEY`, slot 2 uses `ANTHROPIC_API_KEY_2` if set. Writes `limits` and
    `tier_check_utc` to `calibration.json`. Exit 0: proceed. 4: a header is missing or a transient
@@ -69,7 +75,8 @@ Keys are read from the environment only. Step order matters.
 
 ## Launching the experiment
 
-Dry run first (writes the manifest, configs and status, spawns nothing):
+Dry run first (writes the manifest, configs and status, spawns nothing). It needs `config/frozen.json`,
+so it is available only after the pilot; before that add `--allow-unfrozen` (defaults.json costs):
 
     .venv\Scripts\python.exe -m src.procurement.launcher --plan config/run_plan.json --dry-run
 
@@ -81,9 +88,13 @@ Other flags: `--allow-unfrozen` (tests and dry runs only), `--poll-s 60`, `--res
 `--frozen config/frozen.json`, `--calibration`, `--decisions`, `--bidder llm|synthetic`,
 `--stagger-s 5`, `--rerun-finished`. A (condition, seed) with a finished matching run is skipped unless
 `--rerun-finished`. Run the launcher from a dedicated console, not inside a background task that can be
-killed. Exit codes: 0 all runs done; 2 spend stop; 5 pre-flight refusal (no `frozen.json`, unusable
+killed. Exit codes: 0 all runs done; 2 spend stop (total spend across all launches reaches $75); 5 pre-flight refusal (no `frozen.json`, unusable
 `calibration.json`, key not set) or a fatal API error; 6 all runs terminal but not all done; 7 time
-ladder stop.
+ladder stop (see below).
+
+Time ladder: the deadline is `deadline_utc` in `config/run_plan.json` (2026-10-26 11:59 UTC). If nothing
+is launched yet, the plan is cut by hours left: 5 h or less drops rotation; 4 h: T 80 and markup R 2;
+3 h: control and cover R 6; 2.5 h: stop, nothing launched, exit 7. A real launch logs each rung to DECISIONS.md.
 
 A run stops (runner exit 3) when a file named `STOP` appears in its run directory. The launcher does
 this to every child on a spend stop, fatal error, failure or interrupt, and records the reason in
@@ -94,7 +105,8 @@ this to every child on a spend stop, fatal error, failure or interrupt, and reco
     .venv\Scripts\python.exe -m src.procurement.analysis --results-root results/runs [--out DIR] [--scripted-csv PATH]
 
 Runs evaluation, then writes the tables, figure and `README.md` into a new `results/analysis/<UTC>/`
-(or `--out`). The detector alone: `python -m src.procurement.detector --run-dir DIR`. Scripted rows:
+(or `--out`). The same `README.md` is also written to `results/README.md`, in the parent of
+`--results-root`. The detector alone: `python -m src.procurement.detector --run-dir DIR`. Scripted rows:
 `python -m src.procurement.scripted --seeds 100`.
 
 ## Where outputs land
@@ -103,6 +115,7 @@ Runs evaluation, then writes the tables, figure and `README.md` into a new `resu
 - `results/calibration_runs/`: smoke, cover smoke and pilot runs.
 - `results/launches/<UTC>/`: per launch manifest, configs, announce files, logs, `status.json`.
 - `results/analysis/<UTC>/`: analysis output and `scripted_signatures.csv`.
+- `results/README.md`: copy of the latest analysis README (written by the analysis).
 - `results/calibration.json`: one section per hand-run script.
 - `config/frozen.json`: cost parameters frozen by the pilot.
 - `results/STOP.json`: written when the launcher stops runs; an existing one is renamed
