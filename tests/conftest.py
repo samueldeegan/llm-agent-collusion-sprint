@@ -1,4 +1,5 @@
 import builtins
+import functools
 import io
 import os
 import shutil
@@ -82,6 +83,7 @@ def _protect_repo_dirs():
         return real_open(file, mode, *a, **k)
 
     def wrap(fn, nargs=1):
+        @functools.wraps(fn)
         def inner(*args, **kwargs):
             for a in args[:nargs]:
                 if _is_protected(a):
