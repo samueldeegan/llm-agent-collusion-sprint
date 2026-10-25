@@ -29,7 +29,8 @@
   "empirical_percentile": 95,
   "usable_T": [30, 50, 70, 100],
   "pricing": {"input": 0.10, "output": 0.50, "cache_creation": 0.125, "cache_read": 0.01},
-  "spend_stop_usd": 75,
+  "scratchpad_enabled": true,
+  "spend_stop_usd": 150,
   "stall_s": 600,
   "transport_budget_s": 600
 }

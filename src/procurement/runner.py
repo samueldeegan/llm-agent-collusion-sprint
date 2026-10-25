@@ -93,7 +93,10 @@ def make_run_meta(cfg: RunConfig, env: Environment, limits: dict | None = None,
         "cost": {"beta0": cfg.cost.beta0, "beta1": cfg.cost.beta1, "beta2": cfg.cost.beta2,
                  "sigma_eps": cfg.cost.sigma_eps, "K": float(env.K),
                  "season_total_est": float(env.season_total)},
-        "windows": {"history": cfg.history_window, "memory": cfg.memory_window},
+        "arm": cfg.arm,
+        "bidder_info": cfg.bidder_info,
+        "windows": {"history": cfg.history_window, "memory": cfg.memory_window,
+                    "scratchpad": cfg.scratchpad_enabled},
         "max_message_length": cfg.max_message_length,
         "model": cfg.model,
         "max_tokens": cfg.max_tokens,
@@ -167,7 +170,7 @@ class _Loop:
     def __init__(self, cfg: RunConfig, env: Environment, bidder: Bidder, run_dir: Path | None):
         _check_state_hook(bidder)
         self.cfg, self.env, self.bidder, self.run_dir = cfg, env, bidder, run_dir
-        self.run_id = f"{cfg.condition}_s{cfg.seed}"
+        self.run_id = config.run_id_of(cfg.condition, cfg.seed, cfg.arm)
         self.ledger = AwardLedger(env.K, cfg.N)
         self.seats = resolve_cartel_seats(cfg)
         self.channel = Channel(self.seats, cfg.condition, cfg.max_message_length)  # control: closed
@@ -419,7 +422,7 @@ class _Loop:
             truth_rows.append({"run_id": self.run_id, "project_id": pid, "firm_id": firm, "seat": i,
                                "cost": costs[i], "eps": float(env.eps[i, t]), "nu": float(env.nu[t]),
                                "is_cartel": int(self.seats is not None and i in self.seats),
-                               "cartel_role": roles[i], "scheme": scheme_of(cfg)})
+                               "cartel_role": roles[i], "scheme": scheme_of(cfg), "arm": cfg.arm})
             call_rows += _call_rows(self.run_id, pid, firm, "bid", results[i].call_records)
             entry = _transcript(i, "bid", posting, results[i])
             if entry is not None:
@@ -526,11 +529,17 @@ def _check_resumable(cfg: RunConfig, old_meta: dict, name: str) -> None:
                 "cartel_seats": [] if seats is None else list(seats),
                 "bidder": cfg.bidder, "model": cfg.model,
                 "max_message_length": cfg.max_message_length,
-                "windows": {"history": cfg.history_window, "memory": cfg.memory_window},
+                "arm": cfg.arm, "bidder_info": cfg.bidder_info,
+                "windows": {"history": cfg.history_window, "memory": cfg.memory_window,
+                            "scratchpad": cfg.scratchpad_enabled},
                 "concurrency": cfg.concurrency,
                 "scripted": {"margin": cfg.scripted_margin, "rule": cfg.scripted_rule,
                              "serious_add": cfg.serious_add}}
     got = {k: old_meta.get(k) for k in expected}
+    got["arm"] = config.arm_of_meta(old_meta)  # round-1 metas lack these keys
+    got["bidder_info"] = old_meta.get("bidder_info") or "shown"
+    if isinstance(old_meta.get("windows"), dict):
+        got["windows"] = {"scratchpad": True, **old_meta["windows"]}
     got_cost = {k: (old_meta.get("cost") or {}).get(k) for k in ("beta0", "beta1", "beta2", "sigma_eps")}
     expected["cost"] = {k: getattr(cfg.cost, k) for k in got_cost}
     got["cost"] = got_cost
@@ -553,7 +562,7 @@ def same_run(cfg: RunConfig, meta: dict) -> bool:
 def _start_resume(cfg: RunConfig, env: Environment, old_dir: Path, old_meta: dict, last: int, root: Path,
                   limits: dict | None, frozen_from: str | None) -> tuple[Path, dict]:
     """A NEW run dir seeded from ``old_dir`` up to project ``last``. ``old_dir`` is only read."""
-    new_dir = io.new_run_dir(root, cfg.condition, cfg.seed)
+    new_dir = io.new_run_dir(root, cfg.condition, cfg.seed, arm=cfg.arm)
     for name, cols in _RUN_CSVS:
         _copy_rows_upto(old_dir / name, new_dir / name, cols, last)
     _copy_transcripts_upto(old_dir / "transcripts", new_dir / "transcripts", last)
@@ -595,7 +604,7 @@ def run(cfg: RunConfig, bidder_factory: BidderFactory, results_root: str | Path 
         run_dir, meta = _start_resume(cfg, env, resume_dir, old_meta, loop.start, root, limits, frozen_from)
     else:
         root = results_root if results_root is not None else _default_root(cfg, purpose)
-        run_dir = io.new_run_dir(root, cfg.condition, cfg.seed)
+        run_dir = io.new_run_dir(root, cfg.condition, cfg.seed, arm=cfg.arm)
         meta = make_run_meta(cfg, env, limits=limits, frozen_from=frozen_from, purpose=purpose)
         io.write_run_meta(run_dir, meta)
     loop.run_dir = run_dir

@@ -11,7 +11,7 @@ from src.procurement.types import BidContext
 COST = CostParams(0.90, 0.08, 0.17, 0.05)
 BID_COLS = ["run_id", "project_id", "firm_id", "est", "tag", "dist", "cap", "firm_rate", "bid", "won"]
 TRUTH_COLS = ["run_id", "project_id", "firm_id", "seat", "cost", "eps", "nu", "is_cartel",
-              "cartel_role", "scheme"]
+              "cartel_role", "scheme", "arm"]
 
 
 def test_honest_bid_formula():

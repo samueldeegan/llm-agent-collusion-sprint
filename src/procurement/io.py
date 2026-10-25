@@ -15,7 +15,7 @@ import pandas as pd
 
 BIDS_COLUMNS = ["run_id", "project_id", "firm_id", "est", "tag", "dist", "cap", "firm_rate", "bid", "won"]
 TRUTH_COLUMNS = ["run_id", "project_id", "firm_id", "seat", "cost", "eps", "nu", "is_cartel",
-                 "cartel_role", "scheme"]
+                 "cartel_role", "scheme", "arm"]
 MESSAGES_COLUMNS = ["run_id", "project_id", "order", "sender", "recipient", "my_cost",
                     "intended_serious_bid", "text", "reason"]
 CALLS_COLUMNS = ["run_id", "project_id", "firm_id", "phase", "attempt", "latency_ms", "input_tokens",
@@ -34,11 +34,11 @@ _BIDS_STR_COLUMNS = ("run_id", "firm_id", "tag")
 
 # ---------------------------------------------------------------- run directory
 
-def new_run_dir(results_root, condition, seed, now_utc: datetime | None = None) -> Path:
+def new_run_dir(results_root, condition, seed, now_utc: datetime | None = None, arm: str = "base") -> Path:
     """Create a fresh run directory ``<yyyymmdd_HHMMSS>_<condition>_s<seed>``; never reuse one."""
     if now_utc is None:
         now_utc = datetime.now(timezone.utc)
-    base = f"{now_utc:%Y%m%d_%H%M%S}_{condition}_s{seed}"
+    base = f"{now_utc:%Y%m%d_%H%M%S}_{condition}_s{seed}" if arm == "base" else f"{now_utc:%Y%m%d_%H%M%S}_{condition}_{arm}_s{seed}"
     root = Path(results_root)
     root.mkdir(parents=True, exist_ok=True)
     suffix = 0
@@ -110,7 +110,7 @@ def read_bids(run_dir) -> pd.DataFrame:
 
 
 _TRUTH_INT_COLUMNS = ("project_id", "seat", "is_cartel")
-_TRUTH_STR_COLUMNS = ("run_id", "firm_id", "cartel_role", "scheme")
+_TRUTH_STR_COLUMNS = ("run_id", "firm_id", "cartel_role", "scheme", "arm")
 _PAIR_STATS_INT_COLUMNS = ("usable_T", "primary", "n_joint", "a1_flag", "a3_flag", "a3_df_num", "rank_u",
                            "complete")
 _PAIR_STATS_STR_COLUMNS = ("run_id", "spec", "firm_i", "firm_j", "a1_reason", "not_identified")
@@ -134,7 +134,15 @@ def _typed_frame(path, str_columns, int_columns, nullable_int: bool) -> pd.DataF
 def read_truth(run_dir) -> pd.DataFrame:
     """Read ``truth.csv``: project_id/seat/is_cartel as int, text columns as str (a role "none" stays
     the string "none"), the rest float."""
-    return _typed_frame(Path(run_dir) / "truth.csv", _TRUTH_STR_COLUMNS, _TRUTH_INT_COLUMNS, False)
+    return read_truth_file(Path(run_dir) / "truth.csv")
+
+
+def read_truth_file(path) -> pd.DataFrame:
+    """Read one truth CSV; a round-1 file without an ``arm`` column reads as arm "base"."""
+    df = _typed_frame(path, _TRUTH_STR_COLUMNS, _TRUTH_INT_COLUMNS, False)
+    if "arm" not in df.columns:
+        df["arm"] = "base"
+    return df
 
 
 def read_pair_stats(path) -> pd.DataFrame:

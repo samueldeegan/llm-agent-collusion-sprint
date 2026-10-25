@@ -22,7 +22,7 @@ RUN_FILES = ["bids.csv", "truth.csv", "messages.csv", "calls.csv", "run_meta.jso
 META_KEYS = {"purpose", "condition", "scheme", "seed", "T", "burn_in", "cartel_seats", "seat_to_firm",
              "cost", "windows", "model", "max_tokens", "effort", "bidder", "concurrency",
              "api_key_slot", "frozen_from", "limits", "started_utc", "finished_utc", "git_commit",
-             "scripted", "max_message_length"}
+             "scripted", "max_message_length", "arm", "bidder_info"}
 
 
 @pytest.fixture(scope="module")
@@ -159,7 +159,7 @@ def test_run_meta_contents(control_run):
     assert meta["seat_to_firm"] == {str(i): n for i, n in enumerate(env.names)}
     assert meta["cost"] == {"beta0": 0.90, "beta1": 0.08, "beta2": 0.17, "sigma_eps": 0.05,
                             "K": env.K, "season_total_est": env.season_total}
-    assert meta["windows"] == {"history": 20, "memory": 10} and meta["max_message_length"] == 500
+    assert meta["windows"] == {"history": 20, "memory": 10, "scratchpad": True} and meta["max_message_length"] == 500
     assert meta["model"] == "claude-haiku-5-5" and meta["max_tokens"] == 8000
     assert meta["bidder"] == "synthetic" and meta["concurrency"] == 6 and meta["api_key_slot"] == 1
     assert meta["frozen_from"] is None and meta["limits"] is None
@@ -392,3 +392,40 @@ def test_same_run_compares_message_cap_windows_concurrency(tmp_path):
     for field, value in (("max_message_length", 300), ("history_window", 15), ("memory_window", 7),
                          ("concurrency", 3)):
         assert not same_run(replace(cfg, **{field: value}), meta), field
+
+
+def test_arm_in_run_dir_meta_and_truth(tmp_path):
+    from src.procurement import io
+    cfg = RunConfig(condition="control", seed=2, T=3, burn_in=0, arm="mem0", memory_window=0,
+                    scratchpad_enabled=False)
+    with api_guard():
+        run_dir = run(cfg, synthetic_bidder_factory, results_root=tmp_path)
+    assert run_dir.name.endswith("_control_mem0_s2")
+    meta = io.read_run_meta(run_dir)
+    assert meta["arm"] == "mem0" and meta["bidder_info"] == "shown"
+    assert meta["windows"] == {"history": 20, "memory": 0, "scratchpad": False}
+    truth = io.read_truth(run_dir)
+    assert set(truth["arm"]) == {"mem0"} and set(truth["run_id"]) == {"control_mem0_s2"}
+    assert "arm" not in io.read_bids(run_dir).columns
+
+
+def test_arm_defaults_to_base_when_absent(tmp_path):
+    from dataclasses import replace
+    from src.procurement import config, io
+    from src.procurement.runner import same_run
+    cfg = RunConfig(condition="control", seed=1, T=2, burn_in=0)
+    with api_guard():
+        run_dir = run(cfg, synthetic_bidder_factory, results_root=tmp_path)
+    meta = io.read_run_meta(run_dir)
+    for k in ("arm", "bidder_info"):
+        meta.pop(k)
+    meta["windows"].pop("scratchpad")
+    io.write_run_meta(run_dir, meta)
+    assert config.run_id_from_meta(meta) == "control_s1"
+    assert same_run(cfg, meta) is True
+    assert same_run(replace(cfg, arm="mem0"), meta) is False
+    text = (run_dir / "truth.csv").read_text(encoding="utf-8").splitlines()
+    (tmp_path / "old_truth.csv").write_text("\n".join(l.rsplit(",", 1)[0] for l in text) + "\n",
+                                            encoding="utf-8")
+    old = io.read_truth_file(tmp_path / "old_truth.csv")
+    assert set(old["arm"]) == {"base"}

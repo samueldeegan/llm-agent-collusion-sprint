@@ -30,7 +30,7 @@ CSV_FILES = ["bids.csv", "truth.csv", "messages.csv", "calls.csv"]
 META_KEYS = {"purpose", "condition", "scheme", "seed", "T", "burn_in", "cartel_seats", "seat_to_firm",
              "cost", "windows", "model", "max_tokens", "effort", "bidder", "concurrency",
              "api_key_slot", "frozen_from", "limits", "started_utc", "finished_utc", "git_commit",
-             "scripted", "max_message_length"}
+             "scripted", "max_message_length", "arm", "bidder_info"}
 ENV1 = generate_environment(1, COST, 110, 6)
 
 

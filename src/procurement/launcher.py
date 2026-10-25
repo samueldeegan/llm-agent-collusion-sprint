@@ -113,7 +113,7 @@ def build_manifest(plan: list[RunConfig], keys: int, stagger_s: float = 5) -> li
     for i, cfg in enumerate(sorted(plan, key=lambda c: (rank[c.condition], c.seed))):
         slot = 2 if keys == 2 and i % 2 == 1 else 1
         cfg = replace(cfg, api_key_slot=slot)
-        out.append({"launch_index": i, "name": f"{i:02d}_{cfg.condition}_s{cfg.seed}",
+        out.append({"launch_index": i, "name": f"{i:02d}_{config.run_id_of(cfg.condition, cfg.seed, cfg.arm)}",
                     "condition": cfg.condition, "seed": cfg.seed, "T": cfg.T, "stagger_s": stagger_s * i,
                     "api_key_slot": slot, "config": cfg.to_dict()})
     return out
@@ -692,7 +692,7 @@ class Launcher:
         self.log(f"stop all runs: {reason} (actual ${self.actual:.2f}, projected ${self.projected:.2f})")
         not_started = [r for r in self.runs if r.state == "queued"]
         stop_all(procs, dirs, self.results_root, reason, self.actual, self.projected, self.clock, self.sleep,
-                 not_started=[f"{r.entry['condition']}_s{r.entry['seed']}" for r in not_started],
+                 not_started=[config.run_id_of(r.entry['condition'], r.entry['seed']) for r in not_started],
                  copy_dir=self.workspace)
         for r in not_started:
             r.state = "not_started"
@@ -1041,14 +1041,14 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
 
     runs = configs(plan)
     done = {} if args.rerun_finished else finished_runs(results_root, runs)
-    skipped = [{"name": f"{c}_s{s}", "condition": c, "seed": s, "run_dir": str(results_root / d)}
+    skipped = [{"name": config.run_id_of(c, s), "condition": c, "seed": s, "run_dir": str(results_root / d)}
                for (c, s), d in sorted(done.items())]
     runs = [c for c in runs if (c.condition, c.seed) not in done]
 
     # relaunch safety (B5): a live unfinished run refuses the launch; a stale checkpointed one resumes
     live, resume = unfinished_runs(results_root, runs, now, stall_s)
     if live and not args.ignore_live:
-        names = "; ".join(f"{c}_s{s}: {', '.join(v)}" for (c, s), v in sorted(live.items()))
+        names = "; ".join(f"{config.run_id_of(c, s)}: {', '.join(v)}" for (c, s), v in sorted(live.items()))
         msg = (f"unfinished run(s) with activity in the last {stall_s:g} s, probably still running: {names} "
                "(stop them first, or pass --ignore-live)")
         if not args.dry_run:
@@ -1100,7 +1100,7 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
         lau.log(f"skip {x['name']}: finished matching run {Path(x['run_dir']).name} (skipped_done; "
                 "--rerun-finished to run it again)")
     for (c, s), d in sorted(resume.items()):
-        lau.log(f"resume {c}_s{s}: unfinished run {d.name} restarts from its checkpoint (--resume-dir; "
+        lau.log(f"resume {config.run_id_of(c, s)}: unfinished run {d.name} restarts from its checkpoint (--resume-dir; "
                 "uses the one-restart budget)")
     lau.log(f"spend baseline ${lau.baseline[0]:.2f} over {lau.baseline[1]} calls in "
             f"{len(lau.baseline_dirs)} existing run dir(s)")

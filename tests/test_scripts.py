@@ -526,7 +526,7 @@ def test_defaults_reach_run_meta(tmp_path, key, monkeypatch, capsys):
     assert len(dirs) >= 3
     for d in dirs:
         meta = io.read_run_meta(d)
-        assert meta["windows"] == {"history": 15, "memory": 7}, d
+        assert meta["windows"] == {"history": 15, "memory": 7, "scratchpad": True}, d
         assert meta["max_tokens"] == 6000 and meta["concurrency"] == 3
         assert meta["model"] == "claude-test-model" and meta["max_message_length"] == 300
     out = capsys.readouterr().out

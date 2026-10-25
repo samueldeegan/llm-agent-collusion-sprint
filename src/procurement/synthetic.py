@@ -125,7 +125,7 @@ def simulate_table(seed: int, cost: CostParams, T: int, scheme: str | None,
             brow.append((run_id, t + 1, env.names[i], est, env.tag_label[t], float(env.dist[i, t]),
                          float(cap[i]), float(env.eta[i]), bids[i], int(i == winner)))
             trow.append((run_id, t + 1, env.names[i], i, costs[i], float(env.eps[i, t]),
-                         float(env.nu[t]), int(roles[i] != "none"), roles[i], scheme or "none"))
+                         float(env.nu[t]), int(roles[i] != "none"), roles[i], scheme or "none", "base"))
         won[winner] += est
     bids_df = pd.DataFrame(brow, columns=BIDS_COLUMNS)
     truth_df = pd.DataFrame(trow, columns=TRUTH_COLUMNS)

@@ -47,6 +47,13 @@ class RunConfig:
     scripted_margin: float = 0.10
     scripted_rule: str = "inflate"
     serious_add: float = 0.0
+    scratchpad_enabled: bool = True
+    arm: str = "base"
+    bidder_info: str = "shown"
+
+    def __post_init__(self):
+        if self.bidder_info not in ("shown", "hidden"):
+            raise ValueError(f"bidder_info must be 'shown' or 'hidden', got {self.bidder_info!r}")
 
     def to_dict(self) -> dict:
         """Every field as plain JSON types; ``cost`` as a dict of ``CostParams`` fields."""
@@ -85,6 +92,20 @@ class RunConfig:
         return cls.from_dict(json.loads(text))
 
 
+def run_id_of(condition: str, seed: int, arm: str = "base") -> str:
+    """Run identity: ``<condition>_s<seed>`` for the base arm, ``<condition>_<arm>_s<seed>`` otherwise."""
+    return f"{condition}_s{seed}" if arm == "base" else f"{condition}_{arm}_s{seed}"
+
+
+def arm_of_meta(meta: dict) -> str:
+    """Arm of a run_meta dict; round-1 metas without one are "base"."""
+    return meta.get("arm") or "base"
+
+
+def run_id_from_meta(meta: dict) -> str:
+    return run_id_of(meta["condition"], meta["seed"], arm_of_meta(meta))
+
+
 def cartel_seats(seed: int, condition: str) -> tuple[int, int] | None:
     """Seat pair of the cartel for a (seed, condition); control has none."""
     if condition not in _SEAT_K:
@@ -104,7 +125,7 @@ LADDER_T = 80  # time-ladder rung 2 caps T at this (audit Part 4.2)
 # RunConfig fields every run takes from config/defaults.json (besides ``cost`` and ``T``): the single
 # settings source of the launcher and the hand-run scripts
 DEFAULTS_RUN_FIELDS = ("N", "burn_in", "model", "max_tokens", "history_window", "memory_window",
-                       "max_message_length", "concurrency")
+                       "max_message_length", "concurrency", "scratchpad_enabled")
 
 
 def cost_from_defaults(defaults: dict) -> CostParams:

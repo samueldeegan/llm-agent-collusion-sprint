@@ -26,7 +26,7 @@ def test_column_constants_match_spec():
     assert BIDS_COLUMNS == ["run_id", "project_id", "firm_id", "est", "tag", "dist", "cap", "firm_rate",
                             "bid", "won"]
     assert TRUTH_COLUMNS == ["run_id", "project_id", "firm_id", "seat", "cost", "eps", "nu", "is_cartel",
-                             "cartel_role", "scheme"]
+                             "cartel_role", "scheme", "arm"]
     assert MESSAGES_COLUMNS == ["run_id", "project_id", "order", "sender", "recipient", "my_cost",
                                 "intended_serious_bid", "text", "reason"]
     assert CALLS_COLUMNS == ["run_id", "project_id", "firm_id", "phase", "attempt", "latency_ms",

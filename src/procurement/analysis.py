@@ -785,7 +785,7 @@ def _dir_run_ids(results_root) -> set[str]:
         for d in root.iterdir():
             m = _RUN_DIR_NAME.search(d.name) if d.is_dir() else None
             if m:
-                out.add(f"{m['cond']}_s{int(m['seed'])}")
+                out.add(config.run_id_of(m['cond'], int(m['seed'])))
     return out
 
 
@@ -810,7 +810,7 @@ def missing_runs(results_root, stop_json: dict | None, plan: dict | None) -> lis
         except (TypeError, ValueError, AttributeError):
             rows = []
         for c in rows:
-            rid = f"{c.condition}_s{c.seed}"
+            rid = config.run_id_of(c.condition, c.seed)
             if rid not in present and rid not in seen:
                 seen.add(rid)
                 out.append({"run_id": rid, "reason": "planned in config/run_plan.json but no run directory "

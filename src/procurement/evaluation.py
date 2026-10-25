@@ -234,7 +234,7 @@ def select_run_dirs(results_root, *, include_synthetic: bool = False, frozen_cos
         if problem is not None:
             skipped.append({"dir": str(d), "reason": problem})
             continue
-        groups.setdefault(f"{meta['condition']}_s{meta['seed']}", []).append((d, meta))
+        groups.setdefault(config.run_id_from_meta(meta), []).append((d, meta))
     selected: dict[str, Path] = {}
     for run_id in sorted(groups):
         members = groups[run_id]
@@ -438,7 +438,7 @@ def evaluate(results_root, out_dir, *, include_synthetic: bool = False, frozen_p
     for run_id in order:
         rec = loaded[run_id]
         pair_frames.append(_pair_eval(rec))
-        control = loaded.get(f"control_s{rec['meta']['seed']}")
+        control = loaded.get(config.run_id_of("control", rec['meta']['seed']))
         run_rows.append(_run_eval(run_id, rec, control if rec["meta"]["condition"] != "control" else None))
     pair_eval = (pd.concat(pair_frames, ignore_index=True) if pair_frames
                  else pd.DataFrame(columns=PAIR_EVAL_COLUMNS))

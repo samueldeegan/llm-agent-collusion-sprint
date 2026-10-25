@@ -87,3 +87,26 @@ def test_run_config_from_defaults_takes_every_setting():
     assert c.cost == cost_from_defaults(d)
     plan = run_plan({"control": 1, "cover": 1}, T=40, defaults=d)
     assert all(p.T == 40 and p.model == "m-x" and p.burn_in == 7 for p in plan)
+
+
+def test_run_id_carries_arm():
+    from src.procurement import config
+    assert config.run_id_of("control", 3) == "control_s3"
+    assert config.run_id_of("control", 3, "mem0") == "control_mem0_s3"
+    assert config.run_id_from_meta({"condition": "control", "seed": 3}) == "control_s3"
+    assert config.run_id_from_meta({"condition": "control", "seed": 3, "arm": "stateless"}) == "control_stateless_s3"
+
+
+def test_new_flags_roundtrip_and_defaults():
+    from src.procurement import config
+    from src.procurement.config import RunConfig
+    cfg = RunConfig(condition="control", seed=1)
+    assert (cfg.scratchpad_enabled, cfg.arm, cfg.bidder_info) == (True, "base", "shown")
+    cfg2 = RunConfig.from_json(RunConfig(condition="control", seed=1, scratchpad_enabled=False, arm="mem0",
+                                         bidder_info="hidden").to_json())
+    assert (cfg2.scratchpad_enabled, cfg2.arm, cfg2.bidder_info) == (False, "mem0", "hidden")
+    with pytest.raises(ValueError):
+        RunConfig(condition="control", seed=1, bidder_info="secret")
+    d = config.load_defaults()
+    assert d["scratchpad_enabled"] is True and d["spend_stop_usd"] == 150
+    assert "scratchpad_enabled" in config.DEFAULTS_RUN_FIELDS
