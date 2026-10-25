@@ -165,3 +165,30 @@ def test_nan_paths():
     assert np.isnan(tab.loc["A", "margin_when_leading"]) and np.isnan(tab.loc["A", "shade_slope"])
     assert np.isnan(tab.loc["F", "shade_slope"]) and np.isnan(tab.loc["F", "margin_when_leading"])
     assert tab.loc["F", "regime"] == "moderate"
+
+
+def _threshold_frames(k):
+    """Firm A leads (gap > 0, varying) in exactly k post-burn-in projects (11..), trails in the rest."""
+    brow, trow = [], []
+    for p in range(1, 31):
+        lead = 11 <= p < 11 + k
+        costs = {f: 600.0 for f in FIRMS}
+        costs["A"] = 600.0 - 10.0 * (p - 10) if lead else 700.0
+        for i, f in enumerate(FIRMS):
+            gap = (600.0 - costs["A"]) / EST
+            bid = costs[f] + (0.02 + 0.5 * max(gap, 0)) * EST if f == "A" else costs[f] + 0.03 * EST
+            brow.append(dict(run_id=RID, project_id=p, firm_id=f, est=EST, tag="t", dist=1.0, cap=0.5,
+                             firm_rate=0.0, bid=bid, won=0))
+            trow.append(dict(run_id=RID, project_id=p, firm_id=f, seat=i, cost=costs[f], eps=0.0, nu=0.0,
+                             is_cartel=0, cartel_role="none", scheme="none", arm="base"))
+    return pd.DataFrame(brow), pd.DataFrame(trow)
+
+
+def test_shade_slope_min_rows_threshold():
+    for k, finite in ((7, False), (8, True)):
+        b, t = _threshold_frames(k)
+        tab = rg.firm_season_table(b, t, 10, "base", "control").set_index("firm_id")
+        if finite:
+            assert abs(tab.loc["A", "shade_slope"] - 0.5) < 1e-9
+        else:
+            assert np.isnan(tab.loc["A", "shade_slope"])
