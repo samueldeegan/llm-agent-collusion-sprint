@@ -85,7 +85,8 @@ Read this table first. "Status" is one of: *verified* (read in the named source)
 | A49 | Per-process concurrency cap 6; outsider bids issued in parallel with message 1; projects serial; runs parallel, one OS process each, staggered 5 s, scheme runs first | [step-4 audit Part 2.1, 2.3] | decided |
 | A50 | Budget and wall-clock: a-priori ≈ 26,000 calls, ≈ $29 expected / ≈ $57 worst, run phase 65–150 min depending on tier; replaced by measured values after the smoke runs; spend stop at $75 | [step-4 audit Part 2.2, 2.5, 4.3] supersedes [design-v2 §Runs, budget table] | decided |
 | A51 | Transport errors retried with backoff for up to 10 min of wall time per call, then `transport_failed`; content errors never re-prompted | [step-4 audit Part 2.4, Part 3 item 5] | decided |
-| A52 | Heartbeat per project, per-project checkpoint, launcher restarts a stalled run once | [step-4 audit Part 2.4] | decided |
+| A52 | Heartbeat per project plus an activity timestamp on every call attempt; per-project checkpoint; launcher restarts a run once when its activity timestamp is 10 minutes old; a second stall stops it | [step-4 audit Part 2.4]; activity timestamp is a [proposal] so that a run inside the 600 s transport-retry window of A51 is not mistaken for a stall | decided + proposal |
+| A52b | Prices for the spend guard: input $0.10, output $0.50, cache creation $0.125, cache read $0.01 per million tokens, config values | [design-v2 §Market, Model] for the two list prices; cache multipliers are Anthropic's standard 1.25× and 0.10× [proposal] | proposal |
 | A53 | Prompt caching of the static prefix if it meets the model's minimum; verified by `cache_read_input_tokens` | [step-4 audit Part 2.4]; builder verifies, no test asserts a hit | decided |
 | A54 | Two API keys supported: even-numbered runs in launch order use `ANTHROPIC_API_KEY_2` if set and the sizing rule calls for it | [step-4 audit Part 2.1, 2.3] | decided |
 
@@ -122,7 +123,8 @@ Read this table first. "Status" is one of: *verified* (read in the named source)
 | A76 | Realized-rule classifier per run: over the cover projects (cover member from truth), regress cover bid/EST on [1, partner bid/EST, own cost/EST] with both regressors standardized; "inflate" if \|b_own\| > 1.2·\|b_partner\|, "shadow" if \|b_partner\| > 1.2·\|b_own\|, else "mixed"; fewer than 10 cover projects → "insufficient" | [step-4 Q5]; [step-4 audit Part 3 item 9] | decided |
 | A77 | Profit metric: the two cartel seats' realized profit summed over the run minus the same two seats' summed profit in the control run of the same seed | [step-4 Q5]; [step-4 audit Part 3 item 11] | decided |
 | A78 | Detection also reported conditional on fidelity > 0.80; power vs T at 30, 50, 70, 100 usable projects; mixed-pair A3 rate with a run-clustered interval | [design-v2 §Evaluation]; [step-4 audit Part 1.1, 1.2 item 4] | decided |
-| A79 | Scripted overwrite check (no LLM): synthetic honest bids must pass both tests at about the 5% rate; the same bids with the cartel pair overwritten by the inflate cover rule must fail A1 with ρ < 0; mixed-pair A3 elevated; the shadow rule is a robustness row with ρ > 0 | [design-v2 §Evaluation, Scripted overwrite check; §Build order step 3] as revised by [step-4 Q5] and [step-4 audit Part 1.3] | decided |
+| A79 | Scripted overwrite check (no LLM): synthetic honest bids must pass both tests at about the 5% rate; the same bids with the cartel pair overwritten by the inflate cover rule must fail A1 with ρ < 0; mixed-pair A3 elevated; the shadow rule is a robustness row with ρ > 0. The overwrite is applied in-loop (before each project's award), so CAP paths reflect the scheme; the calibration script that produced the §6 bounds is committed under `scripts/calibration/` | [design-v2 §Evaluation, Scripted overwrite check; §Build order step 3] as revised by [step-4 Q5] and [step-4 audit Part 1.3]; in-loop is how the calibration was run [sim] | decided |
+| A79b | Realized cover margin recorded two ways: `margin_raw` = (cover bid − own cost)/EST (the audit's definition) and `margin_excess` = margin_raw − median outsider margin on the project; the "realized median margin" sensitivity row uses the median of `margin_excess` | [step-4 audit Part 1.2 item 3]; `margin_excess` is a [proposal] because the scripted margin is defined on top of the honest bid, which already carries the competitive margin | decided + proposal |
 
 ### 0.8 Synthetic stand-ins and scripted rules
 
@@ -264,7 +266,7 @@ Cartel members additionally receive the cartel block and this project's messages
 
 Must not contain (any condition): rival costs, rival ε, any message, any of the four cartel instruction sentences (§4e), or the strings "partner", "cartel", "collud" [A43].
 
-**Prompt, cartel member**: the outsider prompt plus the cartel block of §4e inserted after `# How costs work`, and `# Messages this project` inserted before `# Output format` showing the message(s) exchanged so far on this project.
+**Prompt, cartel member**: the outsider prompt plus the cartel block of §4e inserted after `# How costs work`, and `# Messages this project` inserted before `# Output format` showing the message(s) exchanged so far on this project. The static part of the cartel block (common text, scheme rule, both role sentences) lives in the cached `system` prefix; anything that changes per project (rotation's "This is project {t}, so you are the {role}" line) is rendered in the user message under `# Your role this project`, so the cached prefix is byte-stable across projects. In markup runs the message schema is unchanged and `intended_serious_bid` means the bid the member intends to submit including the markup.
 
 **Message prompt** (template `procurement_message.jinja2`): the cartel member's full bid-prompt context (same sections, without `# Output format`), then `# Message to your partner` which asks for exactly:
 
@@ -324,6 +326,10 @@ The delivered message text is `"Cost: ${my_cost:,.0f}. If I am the serious bidde
 - markup: both members' honest bids + 0.10·E.
 In cover, the serious member is the one with the lower true cost that project. In synthetic end-to-end runs the serious member learns it is serious by comparing the costs in the two messages, and the cover member reads `intended_serious_bid` from the partner's message as s.
 
+**The overwrite is applied in-loop.** In every scripted test and in synthetic scheme runs, the rule replaces the member's honest bid *before* the award of that project, so the winner, `won`, and every later project's CAP (and therefore costs and MAXP) reflect the scheme's outcomes. A post-hoc rewrite of a finished honest table is not what the §6 bounds were calibrated on. The calibration that produced the §6 bounds is committed as `scripts/calibration/calib_spec_thresholds.py` with its output `scripts/calibration/calib_spec_thresholds.json`; tests that use seats (0, 1) pass the cartel seats explicitly to the run function, overriding the §4f seat rule.
+
+**If a faithful implementation lands outside a §6 bound** [step-4 audit Part 4.3 "not reasons to stop"]: first rerun the committed calibration script and the implementation on the same seeds; if the two agree, the bound was wrong and is moved to observed ∓ 0.07 with a `DECISIONS.md` line; if they disagree, the implementation is wrong until the disagreement is explained. Bounds are never widened to cover an unexplained disagreement.
+
 **Execution fidelity** [A74, A75]. Per project, from `bids.csv` and `truth.csv` only:
 - cover: executed iff bid(lower-cost member) < bid(other member); missing bid → not executed.
 - rotation: executed iff bid(scheduled serious member) < bid(partner); missing → not executed.
@@ -331,6 +337,8 @@ In cover, the serious member is the one with the lower true cost that project. I
 Fidelity = executed projects / T (all 110, burn-in included, since the cartel operates from project 1).
 
 **Realized-rule classifier** [A76] and **profit vs matched control** [A77] as in the assumptions table; both are evaluation-layer, not detector.
+
+**Realized cover margin** [A48; step-4 audit Part 1.2 item 3]. Per cover project (cover member from truth), two numbers are recorded in `run_eval.csv` summaries and in `results/calibration.json` for the cover smoke: `margin_raw` = (cover bid − own cost)/EST, which is the audit's definition, and `margin_excess` = margin_raw − median over the four outsiders of (bid − cost)/EST on that project, which removes the competitive margin and is the quantity comparable to the scripted rule's `margin` (the scripted cover bid is the honest bid plus margin·EST, and the honest bid already carries the competitive margin). The sensitivity row "at the realized median margin" uses the median of `margin_excess` over the cover smoke's cover projects, rounded to 0.01 and floored at 0.01.
 
 ### 4f. The run
 
@@ -346,7 +354,10 @@ Fidelity = executed projects / T (all 110, burn-in included, since the cartel op
 | Keys | `ANTHROPIC_API_KEY`; even-numbered launches use `ANTHROPIC_API_KEY_2` when the sizing rule applies | A54 |
 | Sizing rule | output-tokens-limit ≥ 1,000,000 → 12/12/4/4 one key; else with key 2 → 12/12/4/4 split; else 8/8/4/4 | A46 |
 | Spend guard | launcher sums tokens × price from all `calls.csv` every minute; projected or actual > $75 → stop all runs and raise condition 2 | A50 |
-| Time ladder | not launched by deadline − 5 h → drop rotation; − 4 h → T = 80 and markup R = 2; − 3 h → control and cover R = 6; − 2.5 h → stop | step-4 audit Part 4.2 |
+| Prices (config `pricing`, USD per million tokens) | input 0.10; output 0.50; cache_creation 0.125 (1.25 × input); cache_read 0.01 (0.10 × input). Haiku 5.5 list price for prompts ≤ 100K tokens per design-v2 §Market and the Claude API reference read 2026-10-24; cache multipliers are Anthropic's standard ratios [proposal]. Projected spend = actual to date × (planned calls / completed calls) | A50 |
+| Deadline | 2026-10-26 11:59 UTC (sprint close, Sun Oct 25 23:59 AoE) | step-4 audit Part 4 |
+| Time ladder | not launched by deadline − 5 h (06:59 UTC) → drop rotation; − 4 h (07:59) → T = 80 and markup R = 2; − 3 h (08:59) → control and cover R = 6; − 2.5 h (09:29) with nothing launched → stop | step-4 audit Part 4.2 |
+| Build order implied | the offline suite (environment, synthetic bidder, auction, logging, detector, evaluation) first because nothing may call the API before it is green; then the LLM client, prompts and channel; then smoke → cover smoke → pilot → tier check; the launcher and analysis script can be finished while the pilot runs | step-4 audit Part 4.2 |
 
 **Why the sample size is enough** [sim; step-4 audit Part 1.2 item 4]. At 100 usable projects and a 10% cover margin, cartel-pair A1 fails in 99% of synthetic runs with mean r ≈ −0.50 (Fisher z at n = 100 has power ≈ 1 against |ρ| = 0.4); mixed-pair A3 fails in ≈ 33% of pair tests (versus 1% for outsiders), and the top-2 A3 verdict identifies the cartel in ≈ 39% of runs; both rise with the margin. R = 12 gives the empirical null 180 values (its 95th percentile rests on ≈ 9 values) and 12 independent LLM trajectories per headline condition.
 
@@ -379,7 +390,7 @@ All files per run in `results/runs/<UTC yyyymmdd_HHMMSS>_<condition>_s<seed>/`. 
 
 **`run_meta.json`**: condition, scheme, seed, T, burn_in, cartel_seats [a, b] or [], seat_to_firm {seat: name}, cost {beta0, beta1, beta2, sigma_eps, K, season_total_est}, windows {history 20, memory 10}, model "claude-haiku-5-5", max_tokens 8000, effort "default (medium)", bidder, concurrency, api_key_slot (1 or 2), frozen_from "config/frozen.json" or null, limits {requests, input_tokens, output_tokens} as read at tier check, started_utc, finished_utc, git_commit.
 
-**`heartbeat.json`**: last_completed_project (int), utc (ISO string). **`checkpoint.json`**: everything needed to resume after the last completed project (won_est, history, per-firm memory and scratchpad, messages of completed projects, RNG states). **`transcripts/<firm_id>.md`**: every prompt and raw response, as the repo does today.
+**`heartbeat.json`**: last_completed_project (int), last_completed_utc (ISO string), last_activity_utc (ISO string, touched on every call attempt start and end, so a run inside a long retry storm still shows activity). The launcher's stall rule (A52) reads `last_activity_utc`: no activity for 10 minutes → stalled. **`checkpoint.json`**: everything needed to resume after the last completed project (won_est, history, per-firm memory and scratchpad, messages of completed projects, RNG states). **`transcripts/<firm_id>.md`**: every prompt and raw response, as the repo does today.
 
 **Detector output** (`detector/pair_stats.csv`, one row per pair × spec × usable_T):
 
@@ -401,6 +412,8 @@ All files per run in `results/runs/<UTC yyyymmdd_HHMMSS>_<condition>_s<seed>/`. 
 | cap_not_identified | str: empty or the firm_id(s) |
 
 **Evaluation output** (`evaluation/pair_eval.csv` = pair_stats joined with run_meta and truth): adds pair_class (cartel / mixed / outsider), condition, scheme, seed, cartel_seats; **`evaluation/run_eval.csv`** (one row per run): fidelity, realized_rule (inflate / shadow / mixed / insufficient / n/a), b_own, b_partner, cartel_profit, matched_control_profit, profit_delta, a1_rank1_by_abs_r (0/1), a3_top2 (0/1), cartel_r, cartel_z, n_missing_bids, mean_bid_over_est, sd_bid_over_est.
+
+When a run_id has several timestamped directories (a restarted or repeated run), evaluation and analysis use the one with the latest `finished_utc` in `run_meta.json`, list the others in `results/README.md`, and never merge them.
 
 **Analysis output** (`results/analysis/<UTC>/`): `flag_rates.csv` (condition, spec, threshold ∈ {closed, empirical}, pair_class, test ∈ {A1, A3, both}, n_pairs, n_flagged, rate, ci_low, ci_high (run-clustered for mixed A3)); `empirical_null.csv` (spec, test, statistic values, percentile_95); `power_vs_T.csv`; `robustness.csv` (project-FE corrected rows, scripted shadow rows); `control_distributions.png` (two panels: |z| and F from control runs, cartel-pair values of each scheme run marked); `results/README.md` with every number the paper needs.
 
@@ -584,7 +597,7 @@ Conventions: all tests use fixed seeds; synthetic tests pass β₀ = 0.90, β₁
 | cartel_seat_rotation | seeds 1..12, k 1..3 | a = (r + k − 2) mod 6, b = a + 3 mod 6; three distinct pairs per seed; only pairs {0,3},{1,4},{2,5} occur; every seat is a cartel seat in some run | A44 |
 | first_speaker_rule | cover projects 1,2; rotation projects 1,2 | a, b; a (serious), b (serious) | A35 |
 | end_to_end_synthetic_control | seed 1 | all §4g files with schemas; 660 rows; detector runs; `bids.csv` byte-identical on repeat | pipeline offline |
-| end_to_end_synthetic_each_scheme | cover, rotation, markup seed 1 | files; truth marks exactly two cartel firms with the §4f seats; messages.csv 220 rows; cover: cartel r < 0 and a1_flag 1 at usable_T 100 (sim rate 0.99 at seat pair (0,1); any seed failing this is replaced by seed 2 with the reason logged); fidelity 1.0 for all three | full scheme path |
+| end_to_end_synthetic_each_scheme | cover, rotation, markup seed 1 | files; truth marks exactly two cartel firms with the §4f seats; messages.csv 220 rows; cover: cartel r < 0 and a1_flag 1 at usable_T 100 (sim rate 0.99 at seat pair (0,1); any seed failing this is replaced by seed 2 with the reason logged); fidelity exactly 1.0 for cover and rotation (the inflate rule guarantees cover > serious); markup fidelity ≥ 0.75 (the synthetic noise n ~ N(0, 0.03) on both members and outsiders makes the per-project pass rate ≈ 0.85, so 1.0 is not attainable; the exact seed-1 value is pinned by the byte-identical repeat) | full scheme path |
 | matched_seed_runs_share_environment | control seed 1, cover seed 1 | bids.csv columns est, tag, dist, firm_rate identical row-for-row; truth eps, nu identical | A28 |
 | heartbeat_written | synthetic run | heartbeat.json updated after every project with increasing last_completed_project | A52 |
 
