@@ -17,9 +17,9 @@ TRUTH_COLUMNS = ["run_id", "project_id", "firm_id", "seat", "cost", "eps", "nu",
 MESSAGES_COLUMNS = ["run_id", "project_id", "order", "sender", "recipient", "my_cost",
                     "intended_serious_bid", "text", "reason"]
 CALLS_COLUMNS = ["run_id", "project_id", "firm_id", "phase", "attempt", "latency_ms", "input_tokens",
-                 "output_tokens", "cache_read_input_tokens", "stop_reason", "reason",
-                 "ratelimit_requests_remaining", "ratelimit_input_tokens_remaining",
-                 "ratelimit_output_tokens_remaining"]
+                 "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens",
+                 "stop_reason", "reason", "ratelimit_requests_remaining",
+                 "ratelimit_input_tokens_remaining", "ratelimit_output_tokens_remaining"]
 PAIR_STATS_COLUMNS = ["run_id", "spec", "rho0", "usable_T", "primary", "firm_i", "firm_j", "n_joint", "r",
                       "z", "a1_flag", "a1_reason", "F", "F_p", "a3_flag", "a3_df_num", "rank_u",
                       "not_identified", "complete"]
