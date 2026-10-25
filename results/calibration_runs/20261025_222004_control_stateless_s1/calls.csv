@@ -1,0 +1,19 @@
+run_id,project_id,firm_id,phase,attempt,latency_ms,input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,stop_reason,reason,ratelimit_requests_remaining,ratelimit_input_tokens_remaining,ratelimit_output_tokens_remaining
+control_stateless_s1,1,Lakeshore Asphalt,bid,1,6813,363,1294,649,0,end_turn,,9996,10000000,1999000
+control_stateless_s1,1,Riverbend Surfacing,bid,1,7578,363,1462,648,0,end_turn,,9996,10000000,1999000
+control_stateless_s1,1,Prairie Roadworks,bid,1,8703,363,1449,647,0,end_turn,,9998,10000000,1999000
+control_stateless_s1,1,Summit Grading,bid,1,7671,363,1447,644,0,end_turn,,9997,10000000,1999000
+control_stateless_s1,1,Granite Ridge Construction,bid,1,6733,363,1189,648,0,end_turn,,9997,10000000,1999000
+control_stateless_s1,1,Northfield Paving,bid,1,6436,363,1229,645,0,end_turn,,9999,10000000,1999000
+control_stateless_s1,2,Lakeshore Asphalt,bid,1,6000,365,1169,649,0,end_turn,,9999,10000000,1999000
+control_stateless_s1,2,Riverbend Surfacing,bid,1,6858,365,1251,648,0,end_turn,,9998,10000000,1999000
+control_stateless_s1,2,Prairie Roadworks,bid,1,10468,365,1530,647,0,end_turn,,9999,10000000,1998000
+control_stateless_s1,2,Summit Grading,bid,1,6703,365,1329,644,0,end_turn,,9998,10000000,1999000
+control_stateless_s1,2,Granite Ridge Construction,bid,1,8203,365,1583,648,0,end_turn,,9999,10000000,1998000
+control_stateless_s1,2,Northfield Paving,bid,1,7296,365,1437,645,0,end_turn,,9999,10000000,1999000
+control_stateless_s1,3,Lakeshore Asphalt,bid,1,8921,361,1637,649,0,end_turn,,9999,10000000,1998000
+control_stateless_s1,3,Riverbend Surfacing,bid,1,6625,361,1296,648,0,end_turn,,9997,10000000,1999000
+control_stateless_s1,3,Prairie Roadworks,bid,1,8046,361,1650,647,0,end_turn,,9999,10000000,1998000
+control_stateless_s1,3,Summit Grading,bid,1,7656,361,1537,644,0,end_turn,,9999,10000000,1998000
+control_stateless_s1,3,Granite Ridge Construction,bid,1,7890,361,1519,648,0,end_turn,,9998,10000000,1998000
+control_stateless_s1,3,Northfield Paving,bid,1,7218,361,1302,645,0,end_turn,,9998,10000000,1999000

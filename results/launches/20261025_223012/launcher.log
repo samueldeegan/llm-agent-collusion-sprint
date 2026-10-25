@@ -1,0 +1,56 @@
+2026-10-25T22:30:13.023620+00:00 launch plan: 24 runs: mem0/control 12, stateless/control 12
+2026-10-25T22:30:13.024371+00:00 R = mem0/control 12, stateless/control 12, T 110, cap 24 (per key slot 1: 24; call_s 8.61106), keys 1, bidder llm
+2026-10-25T22:30:13.024371+00:00 planned calls 15840; a-priori cost $17.42 at 3.5k input / 1.5k output tokens per call
+2026-10-25T22:30:13.024371+00:00 sizing rule from calibration.json: output-tokens limit 2000000, key 2 not set; sized R 12/12/4/4 (control/cover/markup/rotation), plan R 12/12/4/4 (control/cover/markup/rotation) -> R 12/12/4/4 (control/cover/markup/rotation) (per-condition minimum; not applied with --arms: R from the arms entries)
+2026-10-25T22:30:13.024371+00:00 spend baseline $33.73 over 25974 calls in 39 existing run dir(s)
+2026-10-25T22:30:13.025375+00:00 frozen parameters: config/frozen.json; time ladder: off (--arms implies --no-ladder)
+2026-10-25T22:30:13.025375+00:00 spend baseline $33.73 over 25974 calls in 39 existing run dir(s) under C:\Users\samue\PycharmProjects\llm-agent-collusion\results
+2026-10-25T22:30:13.032159+00:00 00_control_mem0_s1: start attempt 1 (slot 1, fresh, pid 27356)
+2026-10-25T22:30:18.033295+00:00 01_control_stateless_s1: start attempt 1 (slot 1, fresh, pid 6328)
+2026-10-25T22:30:23.033143+00:00 02_control_mem0_s2: start attempt 1 (slot 1, fresh, pid 552)
+2026-10-25T22:30:28.034181+00:00 03_control_stateless_s2: start attempt 1 (slot 1, fresh, pid 9992)
+2026-10-25T22:30:33.034511+00:00 04_control_mem0_s3: start attempt 1 (slot 1, fresh, pid 8740)
+2026-10-25T22:30:38.033872+00:00 05_control_stateless_s3: start attempt 1 (slot 1, fresh, pid 32904)
+2026-10-25T22:30:43.035749+00:00 06_control_mem0_s4: start attempt 1 (slot 1, fresh, pid 31364)
+2026-10-25T22:30:48.036821+00:00 07_control_stateless_s4: start attempt 1 (slot 1, fresh, pid 34320)
+2026-10-25T22:30:53.037940+00:00 08_control_mem0_s5: start attempt 1 (slot 1, fresh, pid 28320)
+2026-10-25T22:30:58.037550+00:00 09_control_stateless_s5: start attempt 1 (slot 1, fresh, pid 26516)
+2026-10-25T22:31:03.038516+00:00 10_control_mem0_s6: start attempt 1 (slot 1, fresh, pid 32396)
+2026-10-25T22:31:08.039617+00:00 11_control_stateless_s6: start attempt 1 (slot 1, fresh, pid 29760)
+2026-10-25T22:31:13.190868+00:00 12_control_mem0_s7: start attempt 1 (slot 1, fresh, pid 11048)
+2026-10-25T22:31:18.189908+00:00 13_control_stateless_s7: start attempt 1 (slot 1, fresh, pid 4428)
+2026-10-25T22:31:23.191149+00:00 14_control_mem0_s8: start attempt 1 (slot 1, fresh, pid 20564)
+2026-10-25T22:31:28.191018+00:00 15_control_stateless_s8: start attempt 1 (slot 1, fresh, pid 4932)
+2026-10-25T22:31:33.191737+00:00 16_control_mem0_s9: start attempt 1 (slot 1, fresh, pid 32712)
+2026-10-25T22:31:38.191233+00:00 17_control_stateless_s9: start attempt 1 (slot 1, fresh, pid 5484)
+2026-10-25T22:31:43.193995+00:00 18_control_mem0_s10: start attempt 1 (slot 1, fresh, pid 30868)
+2026-10-25T22:31:48.194520+00:00 19_control_stateless_s10: start attempt 1 (slot 1, fresh, pid 27284)
+2026-10-25T22:31:53.195359+00:00 20_control_mem0_s11: start attempt 1 (slot 1, fresh, pid 3676)
+2026-10-25T22:31:58.196378+00:00 21_control_stateless_s11: start attempt 1 (slot 1, fresh, pid 34556)
+2026-10-25T22:32:03.196304+00:00 22_control_mem0_s12: start attempt 1 (slot 1, fresh, pid 32900)
+2026-10-25T22:32:08.200814+00:00 23_control_stateless_s12: start attempt 1 (slot 1, fresh, pid 35800)
+2026-10-25T22:47:13.039770+00:00 01_control_stateless_s1: done
+2026-10-25T22:47:13.041269+00:00 05_control_stateless_s3: done
+2026-10-25T22:48:13.039981+00:00 03_control_stateless_s2: done
+2026-10-25T22:48:13.039981+00:00 07_control_stateless_s4: done
+2026-10-25T22:48:13.040730+00:00 09_control_stateless_s5: done
+2026-10-25T22:48:13.040730+00:00 11_control_stateless_s6: done
+2026-10-25T22:48:13.040730+00:00 13_control_stateless_s7: done
+2026-10-25T22:48:13.041481+00:00 17_control_stateless_s9: done
+2026-10-25T22:48:13.041481+00:00 21_control_stateless_s11: done
+2026-10-25T22:49:13.038965+00:00 00_control_mem0_s1: done
+2026-10-25T22:49:13.038965+00:00 02_control_mem0_s2: done
+2026-10-25T22:49:13.038965+00:00 04_control_mem0_s3: done
+2026-10-25T22:49:13.039715+00:00 15_control_stateless_s8: done
+2026-10-25T22:49:13.039715+00:00 19_control_stateless_s10: done
+2026-10-25T22:50:13.038406+00:00 06_control_mem0_s4: done
+2026-10-25T22:50:13.038406+00:00 08_control_mem0_s5: done
+2026-10-25T22:50:13.038406+00:00 10_control_mem0_s6: done
+2026-10-25T22:50:13.039156+00:00 12_control_mem0_s7: done
+2026-10-25T22:50:13.039156+00:00 14_control_mem0_s8: done
+2026-10-25T22:50:13.039156+00:00 16_control_mem0_s9: done
+2026-10-25T22:50:13.039156+00:00 20_control_mem0_s11: done
+2026-10-25T22:50:13.039906+00:00 23_control_stateless_s12: done
+2026-10-25T22:51:13.037948+00:00 18_control_mem0_s10: done
+2026-10-25T22:51:13.038703+00:00 22_control_mem0_s12: done
+2026-10-25T22:51:13.384121+00:00 all runs terminal; launcher exit 0

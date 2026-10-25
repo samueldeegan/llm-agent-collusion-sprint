@@ -1,0 +1,56 @@
+2026-10-25T22:40:27.069469+00:00 launch plan: 24 runs: hidden/control 12, stateless_hidden/control 12
+2026-10-25T22:40:27.070473+00:00 R = hidden/control 12, stateless_hidden/control 12, T 110, cap 24 (per key slot 1: 24; call_s 8.61106), keys 1, bidder llm
+2026-10-25T22:40:27.070473+00:00 planned calls 15840; a-priori cost $17.42 at 3.5k input / 1.5k output tokens per call
+2026-10-25T22:40:27.070473+00:00 sizing rule from calibration.json: output-tokens limit 2000000, key 2 not set; sized R 12/12/4/4 (control/cover/markup/rotation), plan R 12/12/4/4 (control/cover/markup/rotation) -> R 12/12/4/4 (control/cover/markup/rotation) (per-condition minimum; not applied with --arms: R from the arms entries)
+2026-10-25T22:40:27.071976+00:00 spend baseline $41.70 over 34752 calls in 65 existing run dir(s)
+2026-10-25T22:40:27.072729+00:00 frozen parameters: config/frozen.json; time ladder: off (--arms implies --no-ladder)
+2026-10-25T22:40:27.072729+00:00 spend baseline $41.70 over 34752 calls in 65 existing run dir(s) under C:\Users\samue\PycharmProjects\llm-agent-collusion\results
+2026-10-25T22:40:27.080227+00:00 00_control_hidden_s1: start attempt 1 (slot 1, fresh, pid 9296)
+2026-10-25T22:40:32.081182+00:00 01_control_stateless_hidden_s1: start attempt 1 (slot 1, fresh, pid 35828)
+2026-10-25T22:40:37.081677+00:00 02_control_hidden_s2: start attempt 1 (slot 1, fresh, pid 32320)
+2026-10-25T22:40:42.082406+00:00 03_control_stateless_hidden_s2: start attempt 1 (slot 1, fresh, pid 31488)
+2026-10-25T22:40:47.083377+00:00 04_control_hidden_s3: start attempt 1 (slot 1, fresh, pid 33384)
+2026-10-25T22:40:52.083163+00:00 05_control_stateless_hidden_s3: start attempt 1 (slot 1, fresh, pid 32132)
+2026-10-25T22:40:57.086032+00:00 06_control_hidden_s4: start attempt 1 (slot 1, fresh, pid 35700)
+2026-10-25T22:41:02.085819+00:00 07_control_stateless_hidden_s4: start attempt 1 (slot 1, fresh, pid 9088)
+2026-10-25T22:41:07.086895+00:00 08_control_hidden_s5: start attempt 1 (slot 1, fresh, pid 30764)
+2026-10-25T22:41:12.087646+00:00 09_control_stateless_hidden_s5: start attempt 1 (slot 1, fresh, pid 28924)
+2026-10-25T22:41:17.088299+00:00 10_control_hidden_s6: start attempt 1 (slot 1, fresh, pid 36212)
+2026-10-25T22:41:22.089510+00:00 11_control_stateless_hidden_s6: start attempt 1 (slot 1, fresh, pid 35992)
+2026-10-25T22:41:27.353289+00:00 12_control_hidden_s7: start attempt 1 (slot 1, fresh, pid 36836)
+2026-10-25T22:41:32.353665+00:00 13_control_stateless_hidden_s7: start attempt 1 (slot 1, fresh, pid 30416)
+2026-10-25T22:41:37.355453+00:00 14_control_hidden_s8: start attempt 1 (slot 1, fresh, pid 36348)
+2026-10-25T22:41:42.355705+00:00 15_control_stateless_hidden_s8: start attempt 1 (slot 1, fresh, pid 35132)
+2026-10-25T22:41:47.358700+00:00 16_control_hidden_s9: start attempt 1 (slot 1, fresh, pid 36368)
+2026-10-25T22:41:52.355892+00:00 17_control_stateless_hidden_s9: start attempt 1 (slot 1, fresh, pid 14944)
+2026-10-25T22:41:57.356414+00:00 18_control_hidden_s10: start attempt 1 (slot 1, fresh, pid 37460)
+2026-10-25T22:42:02.357454+00:00 19_control_stateless_hidden_s10: start attempt 1 (slot 1, fresh, pid 32004)
+2026-10-25T22:42:07.357275+00:00 20_control_hidden_s11: start attempt 1 (slot 1, fresh, pid 33684)
+2026-10-25T22:42:12.357910+00:00 21_control_stateless_hidden_s11: start attempt 1 (slot 1, fresh, pid 37780)
+2026-10-25T22:42:17.358146+00:00 22_control_hidden_s12: start attempt 1 (slot 1, fresh, pid 31992)
+2026-10-25T22:42:22.359947+00:00 23_control_stateless_hidden_s12: start attempt 1 (slot 1, fresh, pid 37808)
+2026-10-25T22:51:27.084605+00:00 01_control_stateless_hidden_s1: done
+2026-10-25T22:51:27.084605+00:00 03_control_stateless_hidden_s2: done
+2026-10-25T22:51:27.085355+00:00 05_control_stateless_hidden_s3: done
+2026-10-25T22:51:27.085355+00:00 07_control_stateless_hidden_s4: done
+2026-10-25T22:51:27.085355+00:00 09_control_stateless_hidden_s5: done
+2026-10-25T22:52:27.083057+00:00 11_control_stateless_hidden_s6: done
+2026-10-25T22:52:27.083808+00:00 13_control_stateless_hidden_s7: done
+2026-10-25T22:52:27.083808+00:00 15_control_stateless_hidden_s8: done
+2026-10-25T22:52:27.083808+00:00 17_control_stateless_hidden_s9: done
+2026-10-25T22:52:27.084556+00:00 19_control_stateless_hidden_s10: done
+2026-10-25T22:53:27.083385+00:00 21_control_stateless_hidden_s11: done
+2026-10-25T22:53:27.084134+00:00 23_control_stateless_hidden_s12: done
+2026-10-25T22:55:27.083185+00:00 00_control_hidden_s1: done
+2026-10-25T22:55:27.083935+00:00 04_control_hidden_s3: done
+2026-10-25T22:56:27.083882+00:00 02_control_hidden_s2: done
+2026-10-25T22:56:27.084633+00:00 06_control_hidden_s4: done
+2026-10-25T22:56:27.084633+00:00 08_control_hidden_s5: done
+2026-10-25T22:57:27.084475+00:00 10_control_hidden_s6: done
+2026-10-25T22:57:27.085224+00:00 12_control_hidden_s7: done
+2026-10-25T22:57:27.085224+00:00 14_control_hidden_s8: done
+2026-10-25T22:57:27.085224+00:00 16_control_hidden_s9: done
+2026-10-25T22:57:27.085224+00:00 18_control_hidden_s10: done
+2026-10-25T22:57:27.085975+00:00 20_control_hidden_s11: done
+2026-10-25T22:57:27.085975+00:00 22_control_hidden_s12: done
+2026-10-25T22:57:27.363656+00:00 all runs terminal; launcher exit 0

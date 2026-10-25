@@ -1,0 +1,54 @@
+{
+  "N": 6,
+  "T": 110,
+  "api_key_slot": 1,
+  "arm": "stateless",
+  "bidder": "llm",
+  "bidder_info": "shown",
+  "burn_in": 10,
+  "cartel_seats": null,
+  "concurrency": 6,
+  "condition": "control",
+  "cost": {
+    "beta0": 0.6487459575217261,
+    "beta1": 0.08,
+    "beta2": 0.17,
+    "est_max": 2000000,
+    "est_min": 200000,
+    "eta_range": 0.06,
+    "honest_margin": 1.05,
+    "honest_noise": 0.03,
+    "k_frac": 0.25,
+    "map_size": 100,
+    "nu_levels": [
+      -0.05,
+      0.0,
+      0.05,
+      0.08
+    ],
+    "sigma_eps": 0.05,
+    "tag_labels": [
+      "routine",
+      "standard",
+      "complex",
+      "hazardous"
+    ]
+  },
+  "frozen_from": "config/frozen.json",
+  "history_window": 0,
+  "limits": {
+    "input_tokens": 10000000,
+    "output_tokens": 2000000,
+    "requests": 10000
+  },
+  "max_message_length": 500,
+  "max_tokens": 8000,
+  "memory_window": 0,
+  "model": "claude-haiku-5-5",
+  "results_root": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs",
+  "scratchpad_enabled": false,
+  "scripted_margin": 0.1,
+  "scripted_rule": "inflate",
+  "seed": 10,
+  "serious_add": 0.0
+}

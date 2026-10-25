@@ -1,0 +1,53 @@
+{
+  "T": 110,
+  "api_key_slot": 1,
+  "arm": "stateless",
+  "bidder": "llm",
+  "bidder_info": "shown",
+  "burn_in": 10,
+  "cartel_seats": [],
+  "concurrency": 6,
+  "condition": "control",
+  "cost": {
+    "K": 22217944.0,
+    "beta0": 0.6487459575217261,
+    "beta1": 0.08,
+    "beta2": 0.17,
+    "season_total_est": 88871776.0,
+    "sigma_eps": 0.05
+  },
+  "effort": "default (medium)",
+  "finished_utc": "2026-10-25T22:46:34.927808+00:00",
+  "frozen_from": "config/frozen.json",
+  "git_commit": "6891ae2e2592f63cccc14c1679ba2a1e2a9627a2",
+  "limits": {
+    "input_tokens": 10000000,
+    "output_tokens": 2000000,
+    "requests": 10000
+  },
+  "max_message_length": 500,
+  "max_tokens": 8000,
+  "model": "claude-haiku-5-5",
+  "purpose": "experiment",
+  "scheme": "none",
+  "scripted": {
+    "margin": 0.1,
+    "rule": "inflate",
+    "serious_add": 0.0
+  },
+  "seat_to_firm": {
+    "0": "Lakeshore Asphalt",
+    "1": "Riverbend Surfacing",
+    "2": "Prairie Roadworks",
+    "3": "Summit Grading",
+    "4": "Granite Ridge Construction",
+    "5": "Northfield Paving"
+  },
+  "seed": 1,
+  "started_utc": "2026-10-25T22:30:18.746452+00:00",
+  "windows": {
+    "history": 0,
+    "memory": 0,
+    "scratchpad": false
+  }
+}
