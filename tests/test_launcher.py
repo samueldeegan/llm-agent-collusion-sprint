@@ -376,15 +376,25 @@ def test_stop_file_on_condition_2(tmp_path):
     straggler = FakeProc(clock, dirs[1], exit_at=None, honour_stop=False)
     finished = FakeProc(clock, dirs[2], exit_at=0, code=0)
     finished.poll()
+    old_stop = {"reason": "spend", "utc": "2026-10-25T10:00:00+00:00", "runs_incomplete": ["x"]}
+    (tmp_path / "results" / "STOP.json").write_text(json.dumps(old_stop), encoding="utf-8")
+    copy_dir = tmp_path / "launch"
+    copy_dir.mkdir()
     rc = launcher.stop_all([honours, straggler, finished], dirs, root, reason="spend", actual=80.0,
-                           projected=90.0, clock=clock, sleep=clock.sleep)
+                           projected=90.0, clock=clock, sleep=clock.sleep, not_started=["control_s9"],
+                           copy_dir=copy_dir)
     assert rc == 2
+    rotated = tmp_path / "results" / "STOP_20261025T100000Z.json"
+    assert json.loads(rotated.read_text(encoding="utf-8")) == old_stop  # earlier stop kept, never deleted
     assert (dirs[0] / "STOP").exists() and (dirs[1] / "STOP").exists() and not (dirs[2] / "STOP").exists()
     assert (dirs[0] / "STOP").read_bytes() == b""
     assert honours.returncode == 3 and not honours.killed
     assert straggler.killed and clock.elapsed() >= 120
     stop = json.loads((tmp_path / "results" / "STOP.json").read_text(encoding="utf-8"))
-    assert set(stop) == {"reason", "actual_usd", "projected_usd", "utc", "runs_complete", "runs_incomplete"}
+    assert set(stop) == {"reason", "actual_usd", "projected_usd", "utc", "runs_complete", "runs_incomplete",
+                         "runs_not_started"}
+    assert stop["runs_not_started"] == ["control_s9"]
+    assert json.loads((copy_dir / "STOP.json").read_text(encoding="utf-8")) == stop
     assert stop["reason"] == "spend" and stop["actual_usd"] == 80.0 and stop["projected_usd"] == 90.0
     assert stop["runs_complete"] == [dirs[2].name]
     assert sorted(stop["runs_incomplete"]) == sorted([dirs[0].name, dirs[1].name])
@@ -714,3 +724,201 @@ def test_launcher_cli_subprocess_smoke(tmp_path, repo_root):
     for r in status["runs"]:
         assert len(pd.read_csv(Path(r["run_dir"]) / "bids.csv")) == 72
         assert io.read_run_meta(r["run_dir"])["finished_utc"] is not None
+
+
+# ---------------------------------------------------------------- review round 1: guard holes
+
+def _never_exit(name, attempt):
+    return {"exit_at": None}
+
+
+def test_launcher_error_stops_children(tmp_path, monkeypatch):
+    clock = FakeClock()
+    popen = FakePopen(clock, _never_exit)
+    lau = _launcher(tmp_path, _plan({"control": 2, "cover": 1}), popen, clock, poll_s=60, caps={1: 2})
+    real = launcher.spend_guard
+
+    def failing_guard(*a, **k):
+        if clock.elapsed() >= 120:
+            raise RuntimeError("boom in poll")
+        return real(*a, **k)
+
+    monkeypatch.setattr(launcher, "spend_guard", failing_guard)
+    with pytest.raises(RuntimeError, match="boom in poll"):
+        lau.monitor()
+    assert len(popen.procs) == 2 and all((p.run_dir / "STOP").exists() for p in popen.procs)
+    assert all(p.returncode == 3 for p in popen.procs)
+    stop = json.loads((tmp_path / "results" / "STOP.json").read_text(encoding="utf-8"))
+    assert stop["reason"] == "launcher_error" and stop["runs_not_started"] == ["control_s2"]
+    assert (lau.workspace / "STOP.json").is_file()
+    assert [r.state for r in lau.runs] == ["stopped", "stopped", "not_started"]
+    status = json.loads((lau.workspace / "status.json").read_text(encoding="utf-8"))
+    assert status["stop_reason"] == "launcher_error" and status["runs"][2]["state"] == "not_started"
+
+
+def test_keyboard_interrupt_stops_children(tmp_path):
+    clock = FakeClock()
+    popen = FakePopen(clock, _never_exit)
+    lau = _launcher(tmp_path, _plan({"control": 1}), popen, clock, poll_s=60)
+    fired = []
+
+    def sleep(s):
+        if clock.elapsed() >= 100 and not fired:
+            fired.append(1)
+            raise KeyboardInterrupt
+        clock.sleep(s)
+
+    lau.sleep = sleep
+    with pytest.raises(KeyboardInterrupt):
+        lau.monitor()
+    assert (popen.procs[0].run_dir / "STOP").exists()
+    stop = json.loads((tmp_path / "results" / "STOP.json").read_text(encoding="utf-8"))
+    assert stop["reason"] == "interrupted"
+
+
+def test_status_and_log_errors_do_not_stop_monitor(tmp_path, capsys):
+    clock = FakeClock()
+    popen = FakePopen(clock, lambda name, a: {"exit_at": 30, "code": 0})
+    lau = _launcher(tmp_path, _plan({"control": 1}), popen, clock, poll_s=60)
+    (lau.workspace / "status.json.tmp").mkdir()  # every status write fails
+    (lau.workspace / "launcher.log").mkdir()  # every log write fails
+    assert lau.monitor() == 0
+    err = capsys.readouterr().err
+    assert err.count("cannot write status.json") == 1 and err.count("cannot write launcher.log") == 1
+
+
+def test_spend_guard_spans_launches(tmp_path):
+    p = Pricing()
+    results = tmp_path / "results"
+    old = io.new_run_dir(results / "runs", "control", 1, T0)
+    io.write_run_meta(old, {"purpose": "experiment", "finished_utc": T0.isoformat()})
+    _write_calls(old, [_call(1, "A", out=140_000_000)])  # $70
+    cal = io.new_run_dir(results / "calibration_runs", "control", 1, T0)
+    io.write_run_meta(cal, {"purpose": "pilot", "finished_utc": T0.isoformat()})
+    _write_calls(cal, [_call(1, "A", out=8_000_000)])  # $4
+    actual, projected, _ = launcher.spend_guard([], p, 100, baseline=launcher.spend_totals([old, cal], p))
+    assert actual == pytest.approx(74.0) and projected == pytest.approx(74.0 * 102 / 2)
+
+    clock = FakeClock()
+    popen = FakePopen(clock, _never_exit)
+    lau = _launcher(tmp_path, _plan({"cover": 1}, T=10), popen, clock, poll_s=60)
+    assert lau.baseline == (pytest.approx(74.0), 2) and set(lau.baseline_dirs) == {old, cal}
+    real_poll = FakeProc.poll
+
+    def spending_poll(self):
+        rc = real_poll(self)
+        if rc is None and clock.elapsed() >= 120:
+            _write_calls(self.run_dir, [_call(1, "A", out=4_000_000)])  # $2 in the new launch
+        return rc
+
+    FakeProc.poll = spending_poll
+    try:
+        assert lau.monitor() == 2
+    finally:
+        FakeProc.poll = real_poll
+    stop = json.loads((results / "STOP.json").read_text(encoding="utf-8"))
+    assert stop["reason"] == "spend" and stop["actual_usd"] == pytest.approx(76.0)
+    log = (lau.workspace / "launcher.log").read_text(encoding="utf-8")
+    assert "spend baseline $74.00 over 2 calls" in log
+    assert lau._all_dirs() == [popen.procs[0].run_dir.resolve()]  # pre-existing dirs only in the baseline
+
+
+def test_spend_counts_files_missing_a_token_column(tmp_path, capsys):
+    d = tmp_path / "r"
+    d.mkdir()
+    cols = [c for c in io.CALLS_COLUMNS if c != "cache_creation_input_tokens"]
+    row = {c: "" for c in cols}
+    row.update(run_id="control_s1", project_id=1, firm_id="A", phase="bid", attempt=1, output_tokens=2_000_000)
+    io.write_csv(d / "calls.csv", [row], cols)
+    usd, calls = launcher.spend_totals([d], Pricing())
+    assert usd == pytest.approx(1.0) and calls == 1
+    assert "cache_creation_input_tokens" in capsys.readouterr().err
+
+
+def test_unkillable_stalled_run_marked_failed(tmp_path):
+    class Unkillable(FakeProc):
+        def kill(self):
+            self.killed = True  # returncode stays None
+
+    class P(FakePopen):
+        def __call__(self, cmd, **kw):
+            proc = super().__call__(cmd, **kw)
+            proc.__class__ = Unkillable
+            return proc
+
+    clock = FakeClock()
+    popen = P(clock, lambda name, a: {"stall": True, "checkpoint": True})
+    lau = _launcher(tmp_path, _plan({"control": 1}), popen, clock, poll_s=60, stall_s=600)
+    assert lau.monitor() == 6
+    assert len(popen.calls) == 1 and lau.runs[0].state == "failed" and lau.runs[0].restarts == 0
+    assert "did not end the process" in (lau.workspace / "launcher.log").read_text(encoding="utf-8")
+
+
+def test_fatal_and_crash_in_one_pass_no_restart(tmp_path):
+    clock = FakeClock()
+    behave = lambda name, a: ({"exit_at": 30, "code": 4} if name == "01_control_s1"  # noqa: E731
+                              else {"exit_at": 30, "code": 1, "checkpoint": True})
+    popen = FakePopen(clock, behave)
+    lau = _launcher(tmp_path, _plan({"control": 1, "cover": 1}), popen, clock, poll_s=60)
+    assert lau.monitor() == 5
+    assert len(popen.calls) == 2  # the crashed cover run was not restarted
+    assert [(r.state, r.restarts) for r in lau.runs] == [("failed", 0), ("failed", 0)]
+
+
+def test_skip_finished_runs(tmp_path, monkeypatch, capsys):
+    from src.procurement.synthetic import synthetic_bidder_factory
+    root = tmp_path / "results" / "runs"
+    done = runner.run(RunConfig("control", 1, T=12, results_root=str(root)), synthetic_bidder_factory, root)
+    runner.run(RunConfig("control", 2, T=10, results_root=str(root)), synthetic_bidder_factory, root)  # other T
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)  # after the runs (they read the git commit)
+    plan = _plan_file(tmp_path, R={"control": 2}, T=12)
+    base = ["--plan", str(plan), "--dry-run", "--allow-unfrozen", "--frozen", str(tmp_path / "none.json"),
+            "--bidder", "synthetic", "--results-root", str(root), "--decisions", str(tmp_path / "D.md")]
+    assert launcher.main(base, clock=FakeClock()) == 0
+    assert "skip control_s1" in capsys.readouterr().out
+    (ws,) = (tmp_path / "results" / "launches").iterdir()
+    status = json.loads((ws / "status.json").read_text(encoding="utf-8"))
+    states = {(r["condition"], r["seed"]): r["state"] for r in status["runs"]}
+    assert states == {("control", 1): "skipped_done", ("control", 2): "queued"}
+    skipped = [r for r in status["runs"] if r["state"] == "skipped_done"]
+    assert status["skipped_done"] == ["control_s1"] and Path(skipped[0]["run_dir"]) == done
+    assert status["planned_calls"] == 12 * 6
+    # --rerun-finished overrides; a different bidder is not the same run either
+    assert launcher.main(base + ["--rerun-finished"], clock=FakeClock(T0 + timedelta(seconds=1))) == 0
+    ws2 = sorted((tmp_path / "results" / "launches").iterdir())[-1]
+    status = json.loads((ws2 / "status.json").read_text(encoding="utf-8"))
+    assert [r["state"] for r in status["runs"]] == ["queued", "queued"] and status["skipped_done"] == []
+    assert launcher.finished_runs(root, [RunConfig("control", 1, T=12, bidder="llm")]) == {}
+
+
+def test_calibration_without_limits_refused_and_key2_ignored(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", SECRET)
+    monkeypatch.setenv("ANTHROPIC_API_KEY_2", SECRET + "2")
+    results = tmp_path / "results"
+    args = ["--plan", str(_plan_file(tmp_path)), "--allow-unfrozen", "--frozen", str(tmp_path / "none.json"),
+            "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")]
+    # no calibration: one key only, key 2 ignored with a warning
+    assert launcher.main(args + ["--dry-run"], clock=FakeClock()) == 0
+    err = capsys.readouterr().err
+    assert "ANTHROPIC_API_KEY_2 is set but ignored" in err and SECRET not in err
+    (ws,) = (results / "launches").iterdir()
+    status = json.loads((ws / "status.json").read_text(encoding="utf-8"))
+    assert status["keys"] == 1 and {r["api_key_slot"] for r in status["runs"]} == {1}
+    # a calibration file without slot-1 limits: refused in real mode, warned in a dry run
+    (results / "calibration.json").write_text(json.dumps({"measured": {"mean_latency_s": 9}}), encoding="utf-8")
+    assert launcher.main(args, clock=FakeClock(), popen=_no_popen) == 5
+    assert "no slot-1 limits" in capsys.readouterr().err
+    assert len(list((results / "launches").iterdir())) == 1
+    assert launcher.main(args + ["--dry-run"], clock=FakeClock()) == 0
+
+
+def test_relative_paths_resolve_against_repo_root(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    monkeypatch.chdir(tmp_path)  # not the repo root
+    rc = launcher.main(["--plan", "config/run_plan.json", "--dry-run", "--allow-unfrozen",
+                        "--frozen", str(tmp_path / "none.json"), "--results-root", str(tmp_path / "r" / "runs"),
+                        "--decisions", str(tmp_path / "D.md")], clock=FakeClock())
+    assert rc == 0 and "32 runs" in capsys.readouterr().out
+    assert launcher._repo_path("docs/x.md") == launcher.REPO_ROOT / "docs/x.md"
+    assert launcher._repo_path(tmp_path) == tmp_path

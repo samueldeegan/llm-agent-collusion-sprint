@@ -13,8 +13,16 @@ atomically every poll). Each run is ``python -m src.procurement.runner --config 
 API key never appears on a command line, in a file or in a log.
 
 Exit codes: 0 every run done; 2 spend stop (audit 4.3 condition 2); 5 pre-flight refusal (no
-``config/frozen.json``, a key variable not set) or a run's ``FatalAPIError`` (all runs stopped);
-6 every run terminal but not all done; 7 time ladder stop (nothing launched by deadline - 2.5 h).
+``config/frozen.json``, an unusable ``calibration.json``, a key variable not set) or a run's
+``FatalAPIError`` (all runs stopped); 6 every run terminal but not all done; 7 time ladder stop
+(nothing launched by deadline - 2.5 h). If the launcher itself fails or is interrupted, it stops every
+child (STOP files, ``STOP.json`` reason ``launcher_error`` / ``interrupted``) before re-raising.
+
+The spend guard covers total spend: at start it sums every ``calls.csv`` already under the results
+root and ``calibration_runs/`` (the baseline) and adds this launch's runs to it. A (condition, seed)
+that already has a finished experiment run with the same configuration is skipped
+(``skipped_done``) unless ``--rerun-finished``. Relative paths given to ``--plan``, ``--frozen``,
+``--calibration``, ``--decisions`` and ``--results-root`` resolve against the repository root.
 
 Inputs read here and written elsewhere (only these keys are read):
 
@@ -26,7 +34,9 @@ Inputs read here and written elsewhere (only these keys are read):
 
 ``limits`` is per API key slot ("2" only when a second key was checked); a flat
 ``"limits": {"requests": ..., "output_tokens": ...}`` is read as slot 1. Without the file (or without
-slot-1 limits) the plan's R is used, the process cap is the plan size, and a warning is printed.
+slot-1 limits) the plan's R is used, the process cap is the plan size, only key 1 is used (A54: key 2
+only when the sizing rule calls for it) and a warning is printed. A file that exists but yields no
+slot-1 limits is refused in real mode (exit 5).
 
 ``config/frozen.json`` (pilot): ``{"cost": {"beta0": ..., "beta1": ..., "beta2": ..., "sigma_eps": ...},
 ...}``; the four keys may also sit at the top level. They replace those of ``config/defaults.json`` in
@@ -48,7 +58,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
-from src.procurement import config, io
+from src.procurement import config, io, runner
 from src.procurement.config import CONDITIONS, CostParams, Pricing, RunConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -61,7 +71,7 @@ FROZEN_KEYS = ("beta0", "beta1", "beta2", "sigma_eps")
 
 EXIT_DONE, EXIT_SPEND, EXIT_PREFLIGHT, EXIT_FATAL, EXIT_INCOMPLETE, EXIT_LADDER = 0, 2, 5, 5, 6, 7
 RUNNER_STOP, RUNNER_FATAL = 3, 4
-TERMINAL = ("done", "stopped", "failed")
+TERMINAL = ("done", "stopped", "failed", "not_started")
 ALIVE = ("running", "restarted")
 
 LADDER = {  # rung: (hours before the deadline, what it does)
@@ -141,7 +151,12 @@ def read_calibration(path) -> dict | None:
     path = Path(path)
     if not path.is_file():
         return None
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
     raw = data.get("limits") or {}
     if "output_tokens" in raw or "requests" in raw:
         raw = {"1": raw}
@@ -207,9 +222,23 @@ def _copied_upto(run_dir: Path) -> int:
 _TOKEN_COLUMNS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 
 
-def spend_totals(run_dirs, pricing: Pricing) -> tuple[float, int]:
-    """(USD, calls) over every ``calls.csv``: all four token columns priced, a call counted by its
-    attempt-1 row. Torn or unparsable rows (a file being appended) are skipped."""
+_WARNED: set[str] = set()
+
+
+def _warn_once(key: str, msg: str, warn: Callable[[str], None] | None) -> None:
+    if key in _WARNED:
+        return
+    _WARNED.add(key)
+    if warn is not None:
+        warn(msg)
+    else:
+        print(f"launcher: warning: {msg}", file=sys.stderr, flush=True)
+
+
+def spend_totals(run_dirs, pricing: Pricing, warn: Callable[[str], None] | None = None) -> tuple[float, int]:
+    """(USD, calls) over every ``calls.csv``: the token columns present priced (a missing one counts 0,
+    with a warning once per file), a call counted by its attempt-1 row. Rows a resumed dir copied from
+    its predecessor are skipped (counted there); torn or unparsable rows (a file being appended) too."""
     usd, calls = 0.0, 0
     for d in run_dirs:
         d = Path(d)
@@ -223,26 +252,44 @@ def spend_totals(run_dirs, pricing: Pricing) -> tuple[float, int]:
             if not header:
                 continue
             col = {c: i for i, c in enumerate(header)}
-            if not set(_TOKEN_COLUMNS) | {"project_id", "attempt"} <= set(col):
+            if not {"project_id", "attempt"} <= set(col):
+                _warn_once(str(path), f"{path}: no project_id/attempt column; file not counted", warn)
                 continue
+            missing = [c for c in _TOKEN_COLUMNS if c not in col]
+            if missing:
+                _warn_once(str(path), f"{path}: no column(s) {missing}; counted as 0", warn)
             for row in reader:
                 if len(row) != len(header):
                     continue
                 pid = _int(row[col["project_id"]])
                 if pid is None or pid <= skip:
                     continue
-                tok = [_int(row[col[c]]) or 0 for c in _TOKEN_COLUMNS]
+                tok = [(_int(row[col[c]]) or 0) if c in col else 0 for c in _TOKEN_COLUMNS]
                 usd += pricing.cost_usd(*tok)
                 calls += _int(row[col["attempt"]]) == 1
     return usd, calls
 
 
-def spend_guard(run_dirs, pricing: Pricing, planned_calls: int, stop_usd: float = 75.0
+def existing_run_dirs(results_root) -> list[Path]:
+    """Every run dir already under the results root and its sibling ``calibration_runs/``."""
+    root = Path(results_root)
+    out = []
+    for base in (root, root.parent / Path(runner.CALIBRATION_ROOT).name):
+        if base.is_dir():
+            out += sorted(d for d in base.iterdir() if d.is_dir())
+    return out
+
+
+def spend_guard(run_dirs, pricing: Pricing, planned_calls: int, stop_usd: float = 75.0,
+                baseline: tuple[float, int] = (0.0, 0), warn: Callable[[str], None] | None = None
                 ) -> tuple[float, float, bool]:
-    """(actual, projected, stop?): projected = actual x planned / completed calls; stop when actual >
-    ``stop_usd``, or when projected > ``stop_usd`` once at least 200 calls are in (spec A50)."""
-    actual, calls = spend_totals(run_dirs, pricing)
-    projected = actual * planned_calls / max(calls, 1)
+    """(actual, projected, stop?) over total spend: ``baseline`` (USD, calls) already spent before this
+    launch plus every ``calls.csv`` in ``run_dirs``. projected = actual x (baseline calls + planned) /
+    completed calls; stop when actual > ``stop_usd``, or when projected > ``stop_usd`` once at least 200
+    calls are in (spec A50)."""
+    usd, calls = spend_totals(run_dirs, pricing, warn)
+    actual, calls = baseline[0] + usd, baseline[1] + calls
+    projected = actual * (baseline[1] + planned_calls) / max(calls, 1)
     stop = actual > stop_usd or (calls >= SPEND_FLOOR_CALLS and projected > stop_usd)
     return actual, projected, bool(stop)
 
@@ -254,21 +301,47 @@ def _finished(run_dir: Path) -> bool:
         return False
 
 
-def _kill(proc) -> None:
+def _kill(proc) -> bool:
+    """Kill ``proc``; True when it is gone afterwards."""
     try:
         proc.kill()
         proc.wait(timeout=30)
-    except Exception:  # already gone, or wait timed out: nothing more to do
+    except Exception:  # already gone, or wait timed out: checked below
         pass
+    try:
+        return proc.poll() is not None
+    except Exception:
+        return False
+
+
+def _rotate_stop_json(path: Path) -> None:
+    """Rename an existing ``STOP.json`` to ``STOP_<its utc>.json`` (never deleted)."""
+    if not path.is_file():
+        return
+    try:
+        t = datetime.fromisoformat(str(json.loads(path.read_text(encoding="utf-8"))["utc"]))
+        t = t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    except (OSError, ValueError, KeyError, TypeError):
+        t = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    stamp = f"{t.astimezone(timezone.utc):%Y%m%dT%H%M%SZ}"
+    k = 0
+    while True:
+        target = path.with_name(f"STOP_{stamp}{'' if k == 0 else f'_{k}'}.json")
+        if not target.exists():
+            os.replace(path, target)
+            return
+        k += 1
 
 
 def stop_all(procs, run_dirs, results_root, reason: str, actual: float, projected: float,
              clock: Clock = _utc_now, sleep: Callable[[float], None] = time.sleep,
-             grace_s: float = STOP_GRACE_S, poll_every_s: float = 2.0) -> int:
+             grace_s: float = STOP_GRACE_S, poll_every_s: float = 2.0, not_started=None,
+             copy_dir=None) -> int:
     """Spec §4g stop: an empty ``STOP`` file in every running run's dir (``procs[i]`` runs in
     ``run_dirs[i]``; a None proc is not running), up to ``grace_s`` of ``clock`` for them to exit,
     ``kill()`` for stragglers, then ``<results_root>/../STOP.json`` (the ``results/STOP.json`` the
-    analysis reads) with run-dir basenames. Returns 2."""
+    analysis reads; an older one is first renamed ``STOP_<utc>.json``) with run-dir basenames and the
+    run ids of ``not_started`` runs, and a copy in ``copy_dir`` (the launch dir). Returns 2."""
     pairs = list(zip(procs, run_dirs))
     running = [(p, d) for p, d in pairs if p is not None and p.poll() is None]
     for _, d in running:
@@ -292,9 +365,18 @@ def stop_all(procs, run_dirs, results_root, reason: str, actual: float, projecte
             continue
         names.add(Path(d).name)
         (complete if _finished(Path(d)) else incomplete).append(Path(d).name)
-    _write_json(Path(results_root).parent / "STOP.json", {
-        "reason": reason, "actual_usd": actual, "projected_usd": projected, "utc": _iso(clock()),
-        "runs_complete": complete, "runs_incomplete": incomplete})
+    data = {"reason": reason, "actual_usd": actual, "projected_usd": projected, "utc": _iso(clock()),
+            "runs_complete": complete, "runs_incomplete": incomplete,
+            "runs_not_started": list(not_started or [])}
+    stop_path = Path(results_root).parent / "STOP.json"
+    stop_path.parent.mkdir(parents=True, exist_ok=True)
+    _rotate_stop_json(stop_path)
+    _write_json(stop_path, data)
+    if copy_dir is not None:
+        try:
+            _write_json(Path(copy_dir) / "STOP.json", data)
+        except OSError:
+            pass
     return EXIT_SPEND
 
 
@@ -378,8 +460,10 @@ class Launcher:
                  sleep: Callable[[float], None] = time.sleep, popen=subprocess.Popen,
                  python_exe: str = sys.executable, poll_s: float = 60, stall_s: float = 600,
                  stop_usd: float = 75.0, max_restarts: int = 1, stagger_s: float = 5,
-                 info: dict | None = None, repo_root=REPO_ROOT):
+                 info: dict | None = None, repo_root=REPO_ROOT, skipped: list[dict] | None = None,
+                 baseline: tuple[float, int] | None = None):
         self.runs = [_Run(e) for e in manifest]
+        self.skipped = list(skipped or [])
         self.workspace, self.results_root = Path(workspace), Path(results_root).resolve()
         self.caps, self.pricing, self.planned_calls = dict(caps), pricing, planned_calls
         self.clock, self.sleep, self.popen, self.python_exe = clock, sleep, popen, python_exe
@@ -391,26 +475,48 @@ class Launcher:
         self.last_poll: datetime | None = None
         self.exit_code: int | None = None
         self.stop_reason: str | None = None
+        self._stopping = False
+        self._io_errors: set[str] = set()
+        # total spend before this launch (spec §4f "all calls.csv"); taken before any spawn
+        self.baseline_dirs = existing_run_dirs(self.results_root)
+        self.baseline = baseline if baseline is not None else spend_totals(self.baseline_dirs, pricing)
 
     # ------------------------------------------------------------ logging and status
 
+    def _io_error(self, what: str, exc: OSError) -> None:
+        if what not in self._io_errors:
+            self._io_errors.add(what)
+            print(f"launcher: cannot write {what} ({type(exc).__name__}: {exc}); continuing",
+                  file=sys.stderr, flush=True)
+
     def log(self, msg: str) -> None:
         line = f"{_iso(self.clock())} {msg}"
-        with open(self.workspace / "launcher.log", "a", encoding="utf-8", newline="\n") as f:
-            f.write(line + "\n")
         print(line, flush=True)
+        try:
+            with open(self.workspace / "launcher.log", "a", encoding="utf-8", newline="\n") as f:
+                f.write(line + "\n")
+        except OSError as exc:
+            self._io_error("launcher.log", exc)
 
     def write_status(self) -> None:
+        try:
+            self._write_status()
+        except OSError as exc:
+            self._io_error("status.json", exc)
+
+    def _write_status(self) -> None:
         poll = _iso(self.last_poll)
         runs = [{"name": r.name, "launch_index": r.entry["launch_index"], "condition": r.entry["condition"],
                  "seed": r.entry["seed"], "api_key_slot": r.slot, "state": r.state,
                  "run_dir": None if r.run_dir is None else str(r.run_dir),
                  "run_dirs": [str(d) for d in r.run_dirs], "attempts": r.attempts, "restarts": r.restarts,
                  "exit_code": r.exit_code, "last_poll_utc": poll} for r in self.runs]
+        runs += [{**s, "state": "skipped_done", "last_poll_utc": poll} for s in self.skipped]
         _write_json(self.workspace / "status.json", {
             **self.info, "launch_dir": str(self.workspace), "utc": _iso(self.clock()), "last_poll_utc": poll,
             "caps": {str(k): v for k, v in self.caps.items()}, "planned_calls": self.planned_calls,
-            "actual_usd": self.actual, "projected_usd": self.projected, "exit_code": self.exit_code,
+            "actual_usd": self.actual, "projected_usd": self.projected, "baseline_usd": self.baseline[0],
+            "baseline_calls": self.baseline[1], "exit_code": self.exit_code,
             "stop_reason": self.stop_reason, "runs": runs})
 
     # ------------------------------------------------------------ starting
@@ -508,8 +614,9 @@ class Launcher:
             run.state = final_state
             self.log(f"{run.name}: {why} again after {run.restarts} restart(s); marked {final_state}")
 
-    def _on_exit(self, run: _Run, rc: int) -> bool:
-        """Handle a finished process; True on a fatal API error."""
+    def _on_exit(self, run: _Run, rc: int, restart: bool = True) -> None:
+        """Handle a finished process. ``restart=False`` (a fatal API error in the same pass): a crash
+        is marked failed, not restarted."""
         run.exit_code = rc
         self._close(run)
         if rc == 0:
@@ -521,10 +628,11 @@ class Launcher:
         elif rc == RUNNER_FATAL:
             run.state = "failed"
             self.log(f"{run.name}: FatalAPIError (exit 4); stopping all runs")
-            return True
+        elif not restart:
+            run.state = "failed"
+            self.log(f"{run.name}: crashed (exit {rc}); not restarted (fatal API error in this pass)")
         else:
             self._restart_or(run, f"crashed (exit {rc})", "failed")
-        return False
 
     def _on_stall(self, run: _Run, idle_s: float) -> None:
         why = f"stalled (no activity for {idle_s:.0f} s)"
@@ -533,15 +641,25 @@ class Launcher:
                 (run.current_dir / "STOP").write_bytes(b"")
             except OSError:
                 pass
-        _kill(run.proc)
+        gone = _kill(run.proc)
         run.exit_code = run.proc.poll()
         self._close(run)
+        if not gone:
+            run.state = "failed"
+            self.log(f"{run.name}: {why}; kill() did not end the process; marked failed, not restarted")
+            return
         self._restart_or(run, why, "stopped")
 
     def _all_dirs(self) -> list[Path]:
         return [d for r in self.runs for d in r.run_dirs]
 
-    def _stop(self, reason: str, code: int) -> int:
+    def _spend(self) -> bool:
+        self.actual, self.projected, stop = spend_guard(self._all_dirs(), self.pricing, self.planned_calls,
+                                                        self.stop_usd, self.baseline, self.log)
+        return stop
+
+    def _stop(self, reason: str, code: int | None) -> int | None:
+        self._stopping = True
         procs, dirs = [], []
         for r in self.runs:
             for d in r.run_dirs:
@@ -552,14 +670,23 @@ class Launcher:
                 procs.append(r.proc)
                 dirs.append(r.current_dir)
         self.log(f"stop all runs: {reason} (actual ${self.actual:.2f}, projected ${self.projected:.2f})")
-        stop_all(procs, dirs, self.results_root, reason, self.actual, self.projected, self.clock, self.sleep)
+        not_started = [r for r in self.runs if r.state == "queued"]
+        stop_all(procs, dirs, self.results_root, reason, self.actual, self.projected, self.clock, self.sleep,
+                 not_started=[f"{r.entry['condition']}_s{r.entry['seed']}" for r in not_started],
+                 copy_dir=self.workspace)
+        for r in not_started:
+            r.state = "not_started"
         for r in self.runs:
             if r.alive:
                 r.exit_code = r.proc.poll()
-                r.state = "stopped"
+                if r.exit_code is None:
+                    r.state = "failed"
+                    self.log(f"{r.name}: still alive after kill(); marked failed")
+                else:
+                    r.state = "stopped"
                 self._close(r)
         self.stop_reason, self.exit_code = reason, code
-        self.log(f"STOP.json written; launcher exit {code}")
+        self.log(f"STOP.json written; launcher exit {code if code is not None else '(error, re-raised)'}")
         self.write_status()
         return code
 
@@ -567,25 +694,25 @@ class Launcher:
         """One monitor pass: exits, stalls, spend guard, status. Returns the launcher exit code once
         the launch is over, else None."""
         now = self.last_poll = self.clock()
-        fatal = False
-        for run in self.runs:
+        exits = []
+        for run in self.runs:  # collect every exit of this pass before acting on any
             if run.alive:
                 self._refresh_dir(run)
                 rc = run.proc.poll()
                 if rc is not None:
-                    fatal |= self._on_exit(run, rc)
+                    exits.append((run, rc))
+        fatal = any(rc == RUNNER_FATAL for _, rc in exits)
+        for run, rc in exits:
+            self._on_exit(run, rc, restart=not fatal)
         if fatal:
-            self.actual, self.projected, _ = spend_guard(self._all_dirs(), self.pricing, self.planned_calls,
-                                                         self.stop_usd)
+            self._spend()
             return self._stop("fatal_api_error", EXIT_FATAL)
         for run in self.runs:
             if run.alive:
                 idle = (now - self._last_activity(run)).total_seconds()
                 if idle > self.stall_s:
                     self._on_stall(run, idle)
-        self.actual, self.projected, stop = spend_guard(self._all_dirs(), self.pricing, self.planned_calls,
-                                                        self.stop_usd)
-        if stop:
+        if self._spend():
             return self._stop("spend", EXIT_SPEND)
         if all(r.state in TERMINAL for r in self.runs):
             self.exit_code = EXIT_DONE if all(r.state == "done" for r in self.runs) else EXIT_INCOMPLETE
@@ -594,10 +721,14 @@ class Launcher:
         return self.exit_code
 
     def monitor(self) -> int:
-        """Launch and monitor until every run is terminal or a stop; returns the launcher exit code."""
-        self.write_status()
-        next_poll = self.clock() + timedelta(seconds=self.poll_s)
+        """Launch and monitor until every run is terminal or a stop; returns the launcher exit code.
+        Any exception (or Ctrl+C, which never reaches the children's own process groups) first stops
+        every child: STOP files, ``STOP.json`` with reason ``launcher_error`` or ``interrupted``."""
         try:
+            self.log(f"spend baseline ${self.baseline[0]:.2f} over {self.baseline[1]} calls in "
+                     f"{len(self.baseline_dirs)} existing run dir(s) under {self.results_root.parent}")
+            self.write_status()
+            next_poll = self.clock() + timedelta(seconds=self.poll_s)
             while True:
                 self.start_due()
                 now = self.clock()
@@ -612,9 +743,27 @@ class Launcher:
                 delay = (wake - self.clock()).total_seconds()
                 if delay > 0:
                     self.sleep(delay)
+        except BaseException as exc:
+            self._emergency_stop(exc)
+            raise
         finally:
             for r in self.runs:
                 self._close(r)
+
+    def _emergency_stop(self, exc: BaseException) -> None:
+        reason = "interrupted" if isinstance(exc, KeyboardInterrupt) else "launcher_error"
+        print(f"launcher: {type(exc).__name__}: {exc}; stopping every run ({reason})", file=sys.stderr,
+              flush=True)
+        try:
+            if not self._stopping:
+                self._stop(reason, None)
+                return
+        except BaseException as exc2:  # the stop itself failed: at least end the children
+            print(f"launcher: stop failed ({type(exc2).__name__}: {exc2}); killing children",
+                  file=sys.stderr, flush=True)
+        for r in self.runs:
+            if r.alive and r.proc is not None:
+                _kill(r.proc)
 
 
 # ---------------------------------------------------------------- CLI
@@ -632,6 +781,36 @@ def _append_decision(path: Path, now: datetime, decision: str, reason: str) -> N
 
 def _cost_from_defaults(defaults: dict) -> CostParams:
     return CostParams(**{k: tuple(v) if isinstance(v, list) else v for k, v in defaults["cost"].items()})
+
+
+def _repo_path(value) -> Path:
+    """An absolute path; a relative one is taken relative to the repository root."""
+    p = Path(value)
+    return p if p.is_absolute() else REPO_ROOT / p
+
+
+def finished_runs(results_root, plan: list[RunConfig]) -> dict[tuple[str, int], str]:
+    """(condition, seed) -> run dir name, for each plan entry that already has a finished experiment
+    run under ``results_root`` with the same configuration (the runner's resume check: condition,
+    seed, T, cartel seats, N, bidder, model, scripted fields, cost parameters)."""
+    by_key = {(c.condition, c.seed): c for c in plan}
+    found: dict[tuple[str, int], str] = {}
+    root = Path(results_root)
+    if not root.is_dir():
+        return found
+    for d in sorted(root.iterdir()):
+        if not d.is_dir():
+            continue
+        try:
+            meta = io.read_run_meta(d)
+        except (OSError, ValueError):
+            continue
+        if meta.get("purpose") != "experiment" or meta.get("finished_utc") is None:
+            continue
+        cfg = by_key.get((meta.get("condition"), meta.get("seed")))
+        if cfg is not None and runner.same_run(cfg, meta):
+            found.setdefault((cfg.condition, cfg.seed), d.name)
+    return found
 
 
 def _r_text(R: dict) -> str:
@@ -653,21 +832,24 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     ap.add_argument("--decisions", default="docs/superpowers/DECISIONS.md")
     ap.add_argument("--bidder", default="llm", choices=("llm", "synthetic"))
     ap.add_argument("--stagger-s", type=float, default=5.0)
+    ap.add_argument("--rerun-finished", action="store_true",
+                    help="also launch (condition, seed) pairs that already have a finished matching run")
     args = ap.parse_args(argv)
     clock = clock or _utc_now
     sleep = sleep or time.sleep
     popen = popen or subprocess.Popen
 
     defaults = config.load_defaults()
-    plan_file = json.loads(Path(args.plan).read_text(encoding="utf-8"))
-    results_root = Path(args.results_root).resolve()
+    plan_file = json.loads(_repo_path(args.plan).read_text(encoding="utf-8"))
+    results_root = _repo_path(args.results_root).resolve()
     results_dir = results_root.parent
+    frozen_path, decisions = _repo_path(args.frozen), _repo_path(args.decisions)
 
     # frozen cost parameters (audit 4.2 step 6)
     cost, frozen_from = _cost_from_defaults(defaults), None
-    if Path(args.frozen).is_file():
+    if frozen_path.is_file():
         try:
-            cost = read_frozen(args.frozen, cost)
+            cost = read_frozen(frozen_path, cost)
         except ValueError as exc:
             print(f"launcher: refusing to start: {exc}", file=sys.stderr)
             return EXIT_PREFLIGHT
@@ -682,16 +864,24 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
 
     # sizing rule and caps (A46, §4g concurrency cap)
     has_key2 = bool(os.environ.get(KEY_VARS[2]))
-    cal_path = Path(args.calibration) if args.calibration else results_dir / "calibration.json"
+    cal_path = _repo_path(args.calibration) if args.calibration else results_dir / "calibration.json"
     cal = read_calibration(cal_path)
+    if cal is None and cal_path.is_file():
+        msg = f"{cal_path} exists but yields no slot-1 limits (limits.output_tokens)"
+        if not args.dry_run:
+            print(f"launcher: refusing to start: {msg}", file=sys.stderr)
+            return EXIT_PREFLIGHT
+        print(f"launcher: warning: {msg}", file=sys.stderr)
     if cal is not None:
         sized = apply_sizing(cal["limits"][1], has_key2)
         R, keys = sized["R"], sized["keys"]
         sizing = (f"sizing rule from {cal_path.name}: output-tokens limit {cal['limits'][1]['output_tokens']}, "
                   f"key 2 {'set' if has_key2 else 'not set'}")
     else:
-        R, keys = dict(plan_file["R"]), 2 if has_key2 else 1
-        sizing = f"no calibration limits ({cal_path}): R from the plan, cap = plan size"
+        R, keys = dict(plan_file["R"]), 1
+        sizing = f"no calibration limits ({cal_path}): R from the plan, cap = plan size, one key"
+        if has_key2:
+            sizing += f"; {KEY_VARS[2]} is set but ignored (A54: key 2 only when the sizing rule calls for it)"
         print(f"launcher: warning: {sizing}", file=sys.stderr)
     call_s = (cal or {}).get("mean_latency_s") or 10.0
 
@@ -713,13 +903,17 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
                   f"deadline {plan_file['deadline_utc']}): {LADDER[k][1]}" for k in range(1, rung + 1)]
     if not args.dry_run:
         for line in rung_lines:
-            _append_decision(args.decisions, now, line, "audit Part 4.2 time ladder")
+            _append_decision(decisions, now, line, "audit Part 4.2 time ladder")
     if stop:
         print(f"launcher: {rung_lines[-1]}; nothing launched", file=sys.stderr)
         return EXIT_LADDER
 
     runs = config.run_plan(plan["R"], plan["include_rotation"], plan["T"])
     runs = [replace(c, cost=cost, bidder=args.bidder, results_root=str(results_root)) for c in runs]
+    done = {} if args.rerun_finished else finished_runs(results_root, runs)
+    skipped = [{"name": f"{c}_s{s}", "condition": c, "seed": s, "run_dir": str(results_root / d)}
+               for (c, s), d in sorted(done.items())]
+    runs = [c for c in runs if (c.condition, c.seed) not in done]
     manifest = build_manifest(runs, keys, args.stagger_s)
     limits_by_slot = cal["limits"] if cal else {}
     caps = slot_caps(limits_by_slot, manifest, call_s)
@@ -730,14 +924,15 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     a_priori = calls * pricing.cost_usd(A_PRIORI_INPUT, A_PRIORI_OUTPUT, 0, 0)
     info = {"R": counts, "T": plan["T"], "include_rotation": plan["include_rotation"], "cap": cap,
             "keys": keys, "rung": rung, "dry_run": args.dry_run, "call_s": call_s, "sizing": sizing,
-            "frozen_from": frozen_from, "bidder": args.bidder, "deadline_utc": plan_file["deadline_utc"]}
+            "frozen_from": frozen_from, "bidder": args.bidder, "deadline_utc": plan_file["deadline_utc"],
+            "skipped_done": [x["name"] for x in skipped]}
     workspace = new_launch_dir(results_dir / "launches", now)
     manifest = write_workspace(workspace, manifest, frozen_from, limits_by_slot,
                                header={"created_utc": _iso(now), **info, "planned_calls": calls})
     lau = Launcher(manifest, workspace, results_root, caps=caps, pricing=pricing, planned_calls=calls,
                    clock=clock, sleep=sleep, popen=popen, poll_s=args.poll_s,
                    stall_s=float(defaults.get("stall_s", 600)), stop_usd=float(defaults.get("spend_stop_usd", 75)),
-                   stagger_s=args.stagger_s, info=info)
+                   stagger_s=args.stagger_s, info=info, skipped=skipped)
     per_cond = ", ".join(f"{c} {counts[c]}" for c in LAUNCH_ORDER)
     slots = ", ".join(f"{k}: {v}" for k, v in caps.items())
     lau.log(f"launch plan{' (dry run)' if args.dry_run else ''}: {len(runs)} runs: {per_cond}")
@@ -746,12 +941,17 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     lau.log(f"planned calls {calls}; a-priori cost ${a_priori:.2f} at {A_PRIORI_INPUT / 1000:g}k input / "
             f"{A_PRIORI_OUTPUT / 1000:g}k output tokens per call")
     lau.log(sizing)
+    for x in skipped:
+        lau.log(f"skip {x['name']}: finished matching run {Path(x['run_dir']).name} (skipped_done; "
+                "--rerun-finished to run it again)")
+    lau.log(f"spend baseline ${lau.baseline[0]:.2f} over {lau.baseline[1]} calls in "
+            f"{len(lau.baseline_dirs)} existing run dir(s)")
     lau.log(f"frozen parameters: {frozen_from or 'none (defaults.json)'}; time ladder: "
             + ("; ".join(rung_lines) if rung_lines else "no rung"))
     if args.dry_run:
         lau.write_status()
         return EXIT_DONE
-    _append_decision(args.decisions, now, f"launch {workspace.name}: {len(runs)} runs, R = {_r_text(counts)}, "
+    _append_decision(decisions, now, f"launch {workspace.name}: {len(runs)} runs, R = {_r_text(counts)}, "
                      f"T {plan['T']}, keys {keys}, cap {cap}; {sizing}", "audit Part 2.3 sizing rule, 4.2 step 8")
     return lau.monitor()
 

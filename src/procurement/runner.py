@@ -536,6 +536,15 @@ def _check_resumable(cfg: RunConfig, old_meta: dict, name: str) -> None:
         raise ValueError(f"cannot resume {name}: {detail}")
 
 
+def same_run(cfg: RunConfig, meta: dict) -> bool:
+    """True when ``meta`` (a run_meta.json) describes the same run as ``cfg`` (the resume check)."""
+    try:
+        _check_resumable(cfg, meta, "run")
+    except ValueError:
+        return False
+    return True
+
+
 def _start_resume(cfg: RunConfig, env: Environment, old_dir: Path, old_meta: dict, last: int, root: Path,
                   limits: dict | None, frozen_from: str | None) -> tuple[Path, dict]:
     """A NEW run dir seeded from ``old_dir`` up to project ``last``. ``old_dir`` is only read."""
