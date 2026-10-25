@@ -1,6 +1,6 @@
 # Round 2: memory × information ablation of the control runs
 
-Generated 2026-10-25 23:23:06 UTC by `python -m src.procurement.analysis_round2`; analysis files in `C:/Users/samue/PycharmProjects/llm-agent-collusion/results/analysis/20261025_232222`. Control runs only; 3 decimals; `n/a` = not computable. Rates are rate (rejected/pairs).
+Generated 2026-10-25 23:45:22 UTC by `python -m src.procurement.analysis_round2`; analysis files in `C:/Users/samue/PycharmProjects/llm-agent-collusion/results/analysis/20261025_234438`. Control runs only; 3 decimals; `n/a` = not computable. Rates are rate (rejected/pairs).
 
 1. **base** (memory on, information shown; 12/12 complete runs): tag_filtered A3 closed 0.322 (58/180) [0.217, 0.427]; empirical: own p95 F = 12.602 (in-sample, 0.050 by construction); A1 closed 0.072 (13/180) [0.031, 0.113]; empirical: own p95 |z| = 2.267 (in-sample, 0.050 by construction); regimes passer 10, fat 2, shade 50, razor 8, moderate 2; reference arm for the seed-matched signs.
 2. **mem0** (memory off*, information shown; 12/12 complete runs): tag_filtered A3 closed 0.094 (17/180) [0.027, 0.162]; empirical: own p95 F = 2.916 (in-sample, 0.050 by construction); at base p95 (out-of-sample) 0.000 (0/180) [0.000, 0.000]; A1 closed 0.039 (7/180) [0.014, 0.064]; empirical: own p95 |z| = 1.852 (in-sample, 0.050 by construction); at base p95 (out-of-sample) 0.028 (5/180) [0.008, 0.047]; regimes passer 0, fat 0, shade 64, razor 8, moderate 0; vs base by seed (+/−/=): A3 +1/−10/=1 of 12 (mean diff -0.228, Wilcoxon p 0.009), A1 +3/−6/=3 of 12 (mean diff -0.033, Wilcoxon p 0.176).
@@ -8,14 +8,14 @@ Generated 2026-10-25 23:23:06 UTC by `python -m src.procurement.analysis_round2`
 4. **hidden** (memory on, information hidden; 12/12 complete runs): tag_filtered A3 closed 0.267 (48/180) [0.168, 0.366]; empirical: own p95 F = 14.297 (in-sample, 0.050 by construction); at base p95 (out-of-sample) 0.056 (10/180) [0.000, 0.129]; A1 closed 0.056 (10/180) [0.028, 0.083]; empirical: own p95 |z| = 1.975 (in-sample, 0.050 by construction); at base p95 (out-of-sample) 0.022 (4/180) [0.000, 0.047]; regimes passer 7, fat 0, shade 39, razor 15, moderate 11; vs base by seed (+/−/=): A3 +3/−7/=2 of 12 (mean diff -0.056, Wilcoxon p 0.484), A1 +2/−5/=5 of 12 (mean diff -0.017, Wilcoxon p 0.516).
 5. **stateless_hidden** (memory off, information hidden; 12/12 complete runs): tag_filtered A3 closed 0.044 (8/180) [0.015, 0.074]; empirical: own p95 F = 2.232 (in-sample, 0.050 by construction); at base p95 (out-of-sample) 0.000 (0/180) [0.000, 0.000]; A1 closed 0.044 (8/180) [0.015, 0.074]; empirical: own p95 |z| = 1.882 (in-sample, 0.050 by construction); at base p95 (out-of-sample) 0.039 (7/180) [0.014, 0.064]; regimes passer 0, fat 0, shade 13, razor 0, moderate 59; vs base by seed (+/−/=): A3 +1/−11/=0 of 12 (mean diff -0.278, Wilcoxon p 0.001), A1 +2/−4/=6 of 12 (mean diff -0.028, Wilcoxon p 0.219).
 6. Synthetic floors (rational bids on the base runs' true costs, tag, closed): A3 smooth 0.039, kinked identical 0.150, kinked heterogeneous 0.139; A1 0.067 / 0.033 / 0.028.
-7. Mean bid/EST over post-burn-in bids (mean over complete runs): base 1.217, mem0 1.464, stateless 1.670, hidden 1.226, stateless_hidden 1.059.
+7. Mean bid/EST, non-sentinel bids (bid ≤ 1.5 × EST) / sentinel/no-bid share (post-burn-in firm-project rows with bid > 1.5 × EST or missing), mean over complete runs: base 1.065 / 0.047, mem0 1.056 / 0.003, stateless 1.056 / 0.007, hidden 1.063 / 0.037, stateless_hidden 1.059 / 0.000.
 8. Slope dispersion, projects 61-110 (mean over runs of the SD across firms of the CAP / DIST margin slopes): base 0.160 / 0.023, mem0 0.054 / 0.012, stateless 0.062 / 0.016, hidden 0.162 / 0.015, stateless_hidden 0.026 / 0.004.
 9. Spend: $59.79 actual over 57690 calls over all procurement runs (runs/ + calibration_runs/); round 2 $26.09 (31752 calls).
 10. Empirical thresholds are each arm's own 95th percentile, so the own-threshold rate is about 5% by construction (in-sample, not a false-positive rate); the closed-form rates and the rates at the base arm's p95 (out-of-sample) are the comparisons.
 
 ## Figure
 
-![ablation figure](analysis/20261025_232222/ablation_2x2.png)
+![ablation figure](analysis/20261025_234438/ablation_2x2.png)
 
 (a) A3 false-positive rate (tag_filtered, closed) per cell with run-clustered 95% intervals and reference lines at 0.05, the smooth floor and the kinked-identical floor; (b) the same for A1, tag (raw) and tag_filtered side by side, with the A1 floors; (c) stacked regime counts. Cells: memory on/off within information shown/hidden; mem0 (private memory and scratchpad off, public history kept) is the intermediate rung between base and stateless.
 
@@ -182,11 +182,11 @@ Per-arm medians over firm-seasons:
 
 | arm | pass_rate | margin_med | margin_iqr | margin_when_leading | margin_when_trailing | shade_slope | wins | profit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| base | 0.000 | 0.011 | 0.013 | 0.032 | 0.010 | 0.552 | 18.000 | 478620.314 |
-| mem0 | 0.000 | 0.010 | 0.014 | 0.033 | 0.008 | 0.558 | 18.000 | 499842.868 |
-| stateless | 0.000 | 0.009 | 0.014 | 0.033 | 0.007 | 0.645 | 18.000 | 485993.434 |
-| hidden | 0.000 | 0.012 | 0.014 | 0.021 | 0.012 | 0.323 | 19.000 | 363940.611 |
-| stateless_hidden | 0.000 | 0.018 | 0.018 | 0.028 | 0.017 | 0.160 | 18.000 | 428429.679 |
+| base | 0.000 | 0.011 | 0.013 | 0.032 | 0.010 | 0.552 | 18 | 478620.314 |
+| mem0 | 0.000 | 0.010 | 0.014 | 0.033 | 0.008 | 0.558 | 18 | 499842.868 |
+| stateless | 0.000 | 0.009 | 0.014 | 0.033 | 0.007 | 0.645 | 18 | 485993.434 |
+| hidden | 0.000 | 0.012 | 0.014 | 0.021 | 0.012 | 0.323 | 19 | 363940.611 |
+| stateless_hidden | 0.000 | 0.018 | 0.018 | 0.028 | 0.017 | 0.160 | 18 | 428429.679 |
 
 <details><summary>Every firm-season (regimes_by_arm.csv)</summary>
 
@@ -647,68 +647,68 @@ Per seed: the arm's run-level rejection rate over its pairs with the statistic m
 
 memory off* = private memory and scratchpad off, public bid history kept.
 
-| arm | run | seed | run directory | complete | projects | mean bid/EST |
-| --- | --- | --- | --- | --- | --- | --- |
-| base | control_s1 | 1 | `20261025_181339_control_s1` | yes | 110 | 1.033 |
-| base | control_s2 | 2 | `20261025_181344_control_s2` | yes | 110 | 1.069 |
-| base | control_s3 | 3 | `20261025_181349_control_s3` | yes | 110 | 1.174 |
-| base | control_s4 | 4 | `20261025_181354_control_s4` | yes | 110 | 1.433 |
-| base | control_s5 | 5 | `20261025_181359_control_s5` | yes | 110 | 1.259 |
-| base | control_s6 | 6 | `20261025_181404_control_s6` | yes | 110 | 1.178 |
-| base | control_s7 | 7 | `20261025_181409_control_s7` | yes | 110 | 1.453 |
-| base | control_s8 | 8 | `20261025_181414_control_s8` | yes | 110 | 1.158 |
-| base | control_s9 | 9 | `20261025_181419_control_s9` | yes | 110 | 1.046 |
-| base | control_s10 | 10 | `20261025_181424_control_s10` | yes | 110 | 1.136 |
-| base | control_s11 | 11 | `20261025_181430_control_s11` | yes | 110 | 1.536 |
-| base | control_s12 | 12 | `20261025_181434_control_s12` | yes | 110 | 1.129 |
-| mem0 | control_mem0_s1 | 1 | `20261025_223013_control_mem0_s1` | yes | 110 | 1.039 |
-| mem0 | control_mem0_s2 | 2 | `20261025_223023_control_mem0_s2` | yes | 110 | 1.073 |
-| mem0 | control_mem0_s3 | 3 | `20261025_223033_control_mem0_s3` | yes | 110 | 1.050 |
-| mem0 | control_mem0_s4 | 4 | `20261025_223043_control_mem0_s4` | yes | 110 | 1.046 |
-| mem0 | control_mem0_s5 | 5 | `20261025_223053_control_mem0_s5` | yes | 110 | 5.927 |
-| mem0 | control_mem0_s6 | 6 | `20261025_223103_control_mem0_s6` | yes | 110 | 1.061 |
-| mem0 | control_mem0_s7 | 7 | `20261025_223113_control_mem0_s7` | yes | 110 | 1.100 |
-| mem0 | control_mem0_s8 | 8 | `20261025_223123_control_mem0_s8` | yes | 110 | 1.021 |
-| mem0 | control_mem0_s9 | 9 | `20261025_223133_control_mem0_s9` | yes | 110 | 1.044 |
-| mem0 | control_mem0_s10 | 10 | `20261025_223143_control_mem0_s10` | yes | 110 | 1.067 |
-| mem0 | control_mem0_s11 | 11 | `20261025_223153_control_mem0_s11` | yes | 110 | 1.076 |
-| mem0 | control_mem0_s12 | 12 | `20261025_223203_control_mem0_s12` | yes | 110 | 1.059 |
-| stateless | control_stateless_s1 | 1 | `20261025_223018_control_stateless_s1` | yes | 110 | 1.038 |
-| stateless | control_stateless_s2 | 2 | `20261025_223028_control_stateless_s2` | yes | 110 | 3.555 |
-| stateless | control_stateless_s3 | 3 | `20261025_223038_control_stateless_s3` | yes | 110 | 1.050 |
-| stateless | control_stateless_s4 | 4 | `20261025_223048_control_stateless_s4` | yes | 110 | 1.047 |
-| stateless | control_stateless_s5 | 5 | `20261025_223058_control_stateless_s5` | yes | 110 | 1.095 |
-| stateless | control_stateless_s6 | 6 | `20261025_223108_control_stateless_s6` | yes | 110 | 5.875 |
-| stateless | control_stateless_s7 | 7 | `20261025_223118_control_stateless_s7` | yes | 110 | 1.103 |
-| stateless | control_stateless_s8 | 8 | `20261025_223128_control_stateless_s8` | yes | 110 | 1.020 |
-| stateless | control_stateless_s9 | 9 | `20261025_223138_control_stateless_s9` | yes | 110 | 1.045 |
-| stateless | control_stateless_s10 | 10 | `20261025_223148_control_stateless_s10` | yes | 110 | 1.073 |
-| stateless | control_stateless_s11 | 11 | `20261025_223158_control_stateless_s11` | yes | 110 | 1.080 |
-| stateless | control_stateless_s12 | 12 | `20261025_223208_control_stateless_s12` | yes | 110 | 1.060 |
-| hidden | control_hidden_s1 | 1 | `20261025_224027_control_hidden_s1` | yes | 110 | 1.048 |
-| hidden | control_hidden_s2 | 2 | `20261025_224037_control_hidden_s2` | yes | 110 | 1.062 |
-| hidden | control_hidden_s3 | 3 | `20261025_224047_control_hidden_s3` | yes | 110 | 1.616 |
-| hidden | control_hidden_s4 | 4 | `20261025_224057_control_hidden_s4` | yes | 110 | 1.073 |
-| hidden | control_hidden_s5 | 5 | `20261025_224107_control_hidden_s5` | yes | 110 | 1.098 |
-| hidden | control_hidden_s6 | 6 | `20261025_224117_control_hidden_s6` | yes | 110 | 1.091 |
-| hidden | control_hidden_s7 | 7 | `20261025_224128_control_hidden_s7` | yes | 110 | 1.381 |
-| hidden | control_hidden_s8 | 8 | `20261025_224138_control_hidden_s8` | yes | 110 | 1.198 |
-| hidden | control_hidden_s9 | 9 | `20261025_224148_control_hidden_s9` | yes | 110 | 1.053 |
-| hidden | control_hidden_s10 | 10 | `20261025_224158_control_hidden_s10` | yes | 110 | 1.088 |
-| hidden | control_hidden_s11 | 11 | `20261025_224208_control_hidden_s11` | yes | 110 | 1.942 |
-| hidden | control_hidden_s12 | 12 | `20261025_224218_control_hidden_s12` | yes | 110 | 1.061 |
-| stateless_hidden | control_stateless_hidden_s1 | 1 | `20261025_224032_control_stateless_hidden_s1` | yes | 110 | 1.038 |
-| stateless_hidden | control_stateless_hidden_s2 | 2 | `20261025_224042_control_stateless_hidden_s2` | yes | 110 | 1.057 |
-| stateless_hidden | control_stateless_hidden_s3 | 3 | `20261025_224052_control_stateless_hidden_s3` | yes | 110 | 1.049 |
-| stateless_hidden | control_stateless_hidden_s4 | 4 | `20261025_224102_control_stateless_hidden_s4` | yes | 110 | 1.049 |
-| stateless_hidden | control_stateless_hidden_s5 | 5 | `20261025_224112_control_stateless_hidden_s5` | yes | 110 | 1.085 |
-| stateless_hidden | control_stateless_hidden_s6 | 6 | `20261025_224122_control_stateless_hidden_s6` | yes | 110 | 1.062 |
-| stateless_hidden | control_stateless_hidden_s7 | 7 | `20261025_224133_control_stateless_hidden_s7` | yes | 110 | 1.093 |
-| stateless_hidden | control_stateless_hidden_s8 | 8 | `20261025_224143_control_stateless_hidden_s8` | yes | 110 | 1.023 |
-| stateless_hidden | control_stateless_hidden_s9 | 9 | `20261025_224153_control_stateless_hidden_s9` | yes | 110 | 1.047 |
-| stateless_hidden | control_stateless_hidden_s10 | 10 | `20261025_224203_control_stateless_hidden_s10` | yes | 110 | 1.070 |
-| stateless_hidden | control_stateless_hidden_s11 | 11 | `20261025_224213_control_stateless_hidden_s11` | yes | 110 | 1.078 |
-| stateless_hidden | control_stateless_hidden_s12 | 12 | `20261025_224223_control_stateless_hidden_s12` | yes | 110 | 1.060 |
+| arm | run | seed | run directory | complete | projects | mean bid/EST, non-sentinel bids | sentinel/no-bid share |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| base | control_s1 | 1 | `20261025_181339_control_s1` | yes | 110 | 1.033 | 0.000 |
+| base | control_s2 | 2 | `20261025_181344_control_s2` | yes | 110 | 1.067 | 0.003 |
+| base | control_s3 | 3 | `20261025_181349_control_s3` | yes | 110 | 1.053 | 0.057 |
+| base | control_s4 | 4 | `20261025_181354_control_s4` | yes | 110 | 1.070 | 0.113 |
+| base | control_s5 | 5 | `20261025_181359_control_s5` | yes | 110 | 1.091 | 0.060 |
+| base | control_s6 | 6 | `20261025_181404_control_s6` | yes | 110 | 1.079 | 0.043 |
+| base | control_s7 | 7 | `20261025_181409_control_s7` | yes | 110 | 1.105 | 0.097 |
+| base | control_s8 | 8 | `20261025_181414_control_s8` | yes | 110 | 1.039 | 0.050 |
+| base | control_s9 | 9 | `20261025_181419_control_s9` | yes | 110 | 1.043 | 0.002 |
+| base | control_s10 | 10 | `20261025_181424_control_s10` | yes | 110 | 1.068 | 0.022 |
+| base | control_s11 | 11 | `20261025_181430_control_s11` | yes | 110 | 1.069 | 0.098 |
+| base | control_s12 | 12 | `20261025_181434_control_s12` | yes | 110 | 1.058 | 0.025 |
+| mem0 | control_mem0_s1 | 1 | `20261025_223013_control_mem0_s1` | yes | 110 | 1.036 | 0.003 |
+| mem0 | control_mem0_s2 | 2 | `20261025_223023_control_mem0_s2` | yes | 110 | 1.054 | 0.008 |
+| mem0 | control_mem0_s3 | 3 | `20261025_223033_control_mem0_s3` | yes | 110 | 1.049 | 0.003 |
+| mem0 | control_mem0_s4 | 4 | `20261025_223043_control_mem0_s4` | yes | 110 | 1.045 | 0.002 |
+| mem0 | control_mem0_s5 | 5 | `20261025_223053_control_mem0_s5` | yes | 110 | 1.083 | 0.003 |
+| mem0 | control_mem0_s6 | 6 | `20261025_223103_control_mem0_s6` | yes | 110 | 1.059 | 0.003 |
+| mem0 | control_mem0_s7 | 7 | `20261025_223113_control_mem0_s7` | yes | 110 | 1.093 | 0.007 |
+| mem0 | control_mem0_s8 | 8 | `20261025_223123_control_mem0_s8` | yes | 110 | 1.017 | 0.005 |
+| mem0 | control_mem0_s9 | 9 | `20261025_223133_control_mem0_s9` | yes | 110 | 1.042 | 0.003 |
+| mem0 | control_mem0_s10 | 10 | `20261025_223143_control_mem0_s10` | yes | 110 | 1.067 | 0.000 |
+| mem0 | control_mem0_s11 | 11 | `20261025_223153_control_mem0_s11` | yes | 110 | 1.076 | 0.000 |
+| mem0 | control_mem0_s12 | 12 | `20261025_223203_control_mem0_s12` | yes | 110 | 1.056 | 0.003 |
+| stateless | control_stateless_s1 | 1 | `20261025_223018_control_stateless_s1` | yes | 110 | 1.035 | 0.003 |
+| stateless | control_stateless_s2 | 2 | `20261025_223028_control_stateless_s2` | yes | 110 | 1.056 | 0.002 |
+| stateless | control_stateless_s3 | 3 | `20261025_223038_control_stateless_s3` | yes | 110 | 1.048 | 0.003 |
+| stateless | control_stateless_s4 | 4 | `20261025_223048_control_stateless_s4` | yes | 110 | 1.043 | 0.005 |
+| stateless | control_stateless_s5 | 5 | `20261025_223058_control_stateless_s5` | yes | 110 | 1.081 | 0.010 |
+| stateless | control_stateless_s6 | 6 | `20261025_223108_control_stateless_s6` | yes | 110 | 1.057 | 0.012 |
+| stateless | control_stateless_s7 | 7 | `20261025_223118_control_stateless_s7` | yes | 110 | 1.093 | 0.010 |
+| stateless | control_stateless_s8 | 8 | `20261025_223128_control_stateless_s8` | yes | 110 | 1.016 | 0.005 |
+| stateless | control_stateless_s9 | 9 | `20261025_223138_control_stateless_s9` | yes | 110 | 1.040 | 0.007 |
+| stateless | control_stateless_s10 | 10 | `20261025_223148_control_stateless_s10` | yes | 110 | 1.067 | 0.005 |
+| stateless | control_stateless_s11 | 11 | `20261025_223158_control_stateless_s11` | yes | 110 | 1.075 | 0.007 |
+| stateless | control_stateless_s12 | 12 | `20261025_223208_control_stateless_s12` | yes | 110 | 1.055 | 0.012 |
+| hidden | control_hidden_s1 | 1 | `20261025_224027_control_hidden_s1` | yes | 110 | 1.044 | 0.007 |
+| hidden | control_hidden_s2 | 2 | `20261025_224037_control_hidden_s2` | yes | 110 | 1.059 | 0.007 |
+| hidden | control_hidden_s3 | 3 | `20261025_224047_control_hidden_s3` | yes | 110 | 1.048 | 0.158 |
+| hidden | control_hidden_s4 | 4 | `20261025_224057_control_hidden_s4` | yes | 110 | 1.062 | 0.013 |
+| hidden | control_hidden_s5 | 5 | `20261025_224107_control_hidden_s5` | yes | 110 | 1.085 | 0.018 |
+| hidden | control_hidden_s6 | 6 | `20261025_224117_control_hidden_s6` | yes | 110 | 1.072 | 0.023 |
+| hidden | control_hidden_s7 | 7 | `20261025_224128_control_hidden_s7` | yes | 110 | 1.101 | 0.075 |
+| hidden | control_hidden_s8 | 8 | `20261025_224138_control_hidden_s8` | yes | 110 | 1.016 | 0.087 |
+| hidden | control_hidden_s9 | 9 | `20261025_224148_control_hidden_s9` | yes | 110 | 1.050 | 0.007 |
+| hidden | control_hidden_s10 | 10 | `20261025_224158_control_hidden_s10` | yes | 110 | 1.085 | 0.005 |
+| hidden | control_hidden_s11 | 11 | `20261025_224208_control_hidden_s11` | yes | 110 | 1.075 | 0.043 |
+| hidden | control_hidden_s12 | 12 | `20261025_224218_control_hidden_s12` | yes | 110 | 1.058 | 0.005 |
+| stateless_hidden | control_stateless_hidden_s1 | 1 | `20261025_224032_control_stateless_hidden_s1` | yes | 110 | 1.038 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s2 | 2 | `20261025_224042_control_stateless_hidden_s2` | yes | 110 | 1.057 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s3 | 3 | `20261025_224052_control_stateless_hidden_s3` | yes | 110 | 1.049 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s4 | 4 | `20261025_224102_control_stateless_hidden_s4` | yes | 110 | 1.049 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s5 | 5 | `20261025_224112_control_stateless_hidden_s5` | yes | 110 | 1.085 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s6 | 6 | `20261025_224122_control_stateless_hidden_s6` | yes | 110 | 1.061 | 0.002 |
+| stateless_hidden | control_stateless_hidden_s7 | 7 | `20261025_224133_control_stateless_hidden_s7` | yes | 110 | 1.093 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s8 | 8 | `20261025_224143_control_stateless_hidden_s8` | yes | 110 | 1.023 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s9 | 9 | `20261025_224153_control_stateless_hidden_s9` | yes | 110 | 1.047 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s10 | 10 | `20261025_224203_control_stateless_hidden_s10` | yes | 110 | 1.070 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s11 | 11 | `20261025_224213_control_stateless_hidden_s11` | yes | 110 | 1.078 | 0.000 |
+| stateless_hidden | control_stateless_hidden_s12 | 12 | `20261025_224223_control_stateless_hidden_s12` | yes | 110 | 1.060 | 0.000 |
 
 ## Transcript archives
 
@@ -722,7 +722,7 @@ Zips over 10 MB are not committed (brief §3).
 
 ## Spend
 
-Every `calls.csv` under `runs/` and `results/calibration_runs/`, priced at config/defaults.json `pricing` (USD per million tokens), a call counted once by its attempt-1 row.
+Every `calls.csv` under `runs/` and `calibration_runs/` (both relative to `results/`), priced at config/defaults.json `pricing` (USD per million tokens), a call counted once by its attempt-1 row.
 
 | scope | USD | calls | run dirs |
 | --- | --- | --- | --- |

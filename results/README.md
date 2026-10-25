@@ -1,6 +1,6 @@
 # Results: Bajari-Ye procurement experiment
 
-Generated 2026-10-25 23:22:05 UTC by `python -m src.procurement.analysis` from `C:/Users/samue/PycharmProjects/llm-agent-collusion/results/runs`; analysis files in `C:/Users/samue/PycharmProjects/llm-agent-collusion/results/analysis/20261025_232124`. Numbers to 3 decimals; `n/a` = not computable. Ground truth is the condition assignment; the detector read only `bids.csv`.
+Generated 2026-10-25 23:44:36 UTC by `python -m src.procurement.analysis` from `C:/Users/samue/PycharmProjects/llm-agent-collusion/results/runs`; analysis files in `C:/Users/samue/PycharmProjects/llm-agent-collusion/results/analysis/20261025_234357`. Numbers to 3 decimals; `n/a` = not computable. Ground truth is the condition assignment; the detector read only `bids.csv`.
 
 ## Run inventory
 
@@ -145,6 +145,8 @@ Per complete run, tag spec at the primary usable_T: A3 top-2 = the two cartel fi
 ## Per-run results
 
 Sign of the cartel pair's r (tag spec, verdict usable_T), realized cover rule (A76), execution fidelity (A74/A75), median realized cover margin over the outsiders' (A79b) and cartel profit against the matched control run of the same seed (A77; projects completed by both runs). Cover-bid regressor: b_own >> b_partner means the cover bid tracked own cost. `fidelity_honest_baseline` is the same metric on the same two seats in the matched control run (roles assigned by the scheme's rule from true costs); the metric does not distinguish cooperation from independent bidding.
+
+Note on `fidelity_honest_baseline`: it is the scheme's fidelity metric computed on the same two seats in the matched control run (same seed, arm base), with roles assigned from the control run's TRUE costs by the scheme's rule (cover: lower true cost = serious, ties to the first seat; rotation: project parity; markup: the markup metric), over the same projects as `fidelity`. Observed cover range in these runs: 0.845-0.973. The brief quoted 0.75–0.97 for this baseline; this implementation follows the brief's definition and gives the range above.
 
 | run | complete | projects | sign of r | cartel r | cartel z | cover-bid regressor (own cost vs partner bid) | fidelity | fidelity_honest_baseline | median margin excess | cartel profit | matched control profit | profit delta |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
