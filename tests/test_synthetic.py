@@ -4,7 +4,7 @@ import pytest
 from src.procurement.config import CostParams, RunConfig
 from src.procurement.environment import generate_environment, cost_of
 from src.procurement.synthetic import (honest_bid, simulate_table, SyntheticBidder,
-                                       scheme_message_text)
+                                       scheme_message_text, noise_array, _cover_bid)
 from src.procurement.types import BidContext
 
 COST = CostParams(0.90, 0.08, 0.17, 0.05)
@@ -39,16 +39,6 @@ def test_serious_add_variant():
     x0 = b0[(b0.project_id == 1) & (b0.firm_id == s0.firm_id)].bid.iloc[0]
     x1 = b1[(b1.project_id == 1) & (b1.firm_id == s1.firm_id)].bid.iloc[0]
     assert x1 - x0 == pytest.approx(0.05 * est, abs=0.011)
-
-
-def test_cover_scheme_inflates_partner():
-    b, t = simulate_table(3, COST, 20, "cover", (0, 3))
-    for p in (1, 2, 3):
-        tp = t[t.project_id == p]
-        bp = b[b.project_id == p].set_index("firm_id")
-        s = bp.loc[tp[tp.cartel_role == "serious"].firm_id.iloc[0], "bid"]
-        c = bp.loc[tp[tp.cartel_role == "cover"].firm_id.iloc[0], "bid"]
-        assert c >= s + 0.01 * bp.est.iloc[0] - 0.01
 
 
 def test_honest_bidder_deterministic_and_offline():
@@ -92,3 +82,127 @@ def test_synthetic_bidder_matches_simulate_table_control():
 def test_scheme_message_text():
     assert scheme_message_text(912_345, 958_000) == \
         "Cost: $912,345. If I am the serious bidder I intend to bid $958,000."
+
+
+# ---- cartel paths ----
+SEED = 7
+CART = (0, 1)
+
+
+def _view(scheme, **kw):
+    b, t = simulate_table(SEED, COST, 110, scheme, CART, **kw)
+    noise = noise_array(SEED, COST, 110, 6)
+    rows = []
+    for p in range(1, 111):
+        bp = b[b.project_id == p].reset_index(drop=True)
+        tp = t[t.project_id == p].reset_index(drop=True)
+        est = float(bp.est.iloc[0])
+        hon = [honest_bid(tp.cost[i], est, noise[i, p - 1]) for i in range(6)]
+        rows.append((p, est, bp.bid.to_numpy(), tp, hon))
+    return rows
+
+
+def test_rotation_roles_and_cover_bid():
+    saw_cost_override = False
+    for p, est, bid, tp, hon in _view("rotation"):
+        ser, cov = (0, 1) if p % 2 == 1 else (1, 0)
+        assert tp.cartel_role[ser] == "serious" and tp.cartel_role[cov] == "cover"
+        if p % 2 == 1 and tp.cost[1] < tp.cost[0]:
+            saw_cost_override = True
+        assert bid[ser] == hon[ser]
+        assert bid[cov] == round(max(hon[cov] + 0.10 * est, bid[ser] + 0.01 * est), 2)
+        assert all(bid[i] == hon[i] for i in range(2, 6))
+    assert saw_cost_override
+
+
+def test_cover_roles_exact_inflate_and_lower_cost_serious():
+    for p, est, bid, tp, hon in _view("cover"):
+        ser, cov = (0, 1) if tp.cost[0] <= tp.cost[1] else (1, 0)
+        assert tp.cartel_role[ser] == "serious" and tp.cartel_role[cov] == "cover"
+        assert bid[ser] == hon[ser]
+        assert bid[cov] == round(max(hon[cov] + 0.10 * est, bid[ser] + 0.01 * est), 2)
+
+
+def test_markup_members_and_outsiders():
+    for p, est, bid, tp, hon in _view("markup"):
+        for i in (0, 1):
+            assert tp.cartel_role[i] == "member"
+            assert bid[i] == round(hon[i] + 0.10 * est, 2)
+        assert all(bid[i] == hon[i] for i in range(2, 6))
+
+
+def test_shadow_rule_cover_bid():
+    for p, est, bid, tp, hon in _view("cover", rule="shadow"):
+        ser, cov = (0, 1) if tp.cost[0] <= tp.cost[1] else (1, 0)
+        assert bid[cov] == round(1.04 * bid[ser], 2)
+
+
+def test_truth_flags_and_scheme_column():
+    for scheme in ("cover", "rotation", "markup"):
+        _, t = simulate_table(SEED, COST, 110, scheme, CART)
+        assert set(t.scheme) == {scheme}
+        assert (t.is_cartel == t.seat.isin(CART).astype(int)).all()
+        assert t.is_cartel.sum() == 220
+    _, t = simulate_table(SEED, COST, 110, None, None)
+    assert t.is_cartel.sum() == 0 and set(t.scheme) == {"none"}
+
+
+def test_shock_path():
+    rng = np.random.default_rng(10_000 + SEED)
+    b, t = simulate_table(SEED, COST, 110, None, None, shock=0.05)
+    noise = noise_array(SEED, COST, 110, 6)
+    for p in range(1, 111):
+        d = rng.normal(0, 0.05)
+        bp = b[b.project_id == p].reset_index(drop=True)
+        tp = t[t.project_id == p].reset_index(drop=True)
+        est = float(bp.est.iloc[0])
+        h0 = honest_bid(tp.cost[0], est, noise[0, p - 1])
+        h1 = honest_bid(tp.cost[1], est, noise[1, p - 1])
+        assert bp.bid[0] - h0 == pytest.approx(d * est, abs=0.01)
+        assert bp.bid[1] - h1 == pytest.approx(-d * est, abs=0.01)
+
+
+def test_unknown_cover_rule_raises():
+    with pytest.raises(ValueError):
+        _cover_bid(1.0, 1.0, 1.0, 0.1, "bogus")
+    with pytest.raises(ValueError):
+        simulate_table(SEED, COST, 5, "cover", CART, rule="bogus")
+
+
+def _ctx(role, messages, condition="cover", seat=1, t=2):
+    env = generate_environment(SEED, COST, 110, 6)
+    run = RunConfig(condition=condition, seed=SEED)
+    return BidContext(run=run, env=env, t=t, seat=seat, cap=np.zeros(6), cost=900_000.0,
+                      history=[], messages=messages, memory=[], scratchpad="", role=role,
+                      seats=CART), env
+
+
+def test_bidder_cover_uses_partner_message():
+    bidder = SyntheticBidder(SEED, COST)
+    X = 800_000.0
+    msg = {"sender": 0, "recipient": 1, "my_cost": 1.0, "intended_serious_bid": X, "text": ""}
+    ctx, env = _ctx("cover", [msg])
+    est = float(env.est[ctx.t]); h = honest_bid(ctx.cost, est, bidder.noise[1, ctx.t])
+    assert bidder.bid(ctx).bid == round(max(h + 0.10 * est, X + 0.01 * est), 2)
+    for msgs in ([], [dict(msg, intended_serious_bid=None)]):
+        ctx, _ = _ctx("cover", msgs)
+        assert bidder.bid(ctx).bid == round(h + 0.10 * est, 2)
+
+
+def test_bidder_markup_member_and_serious():
+    bidder = SyntheticBidder(SEED, COST)
+    ctx, env = _ctx("member", [], condition="markup")
+    est = float(env.est[ctx.t]); h = honest_bid(ctx.cost, est, bidder.noise[1, ctx.t])
+    assert bidder.bid(ctx).bid == round(h + 0.10 * est, 2)
+    ctx, _ = _ctx("serious", [], seat=0)
+    h0 = honest_bid(ctx.cost, est, bidder.noise[0, ctx.t])
+    assert bidder.bid(ctx).bid == h0
+
+
+def test_bidder_message_text():
+    bidder = SyntheticBidder(SEED, COST)
+    ctx, env = _ctx("serious", [], seat=0)
+    est = float(env.est[ctx.t]); h = honest_bid(ctx.cost, est, bidder.noise[0, ctx.t])
+    r = bidder.message(ctx)
+    assert r.text == f"Cost: ${ctx.cost:,.0f}. If I am the serious bidder I intend to bid ${h:,.0f}."
+    assert r.intended_serious_bid == h and r.my_cost == ctx.cost

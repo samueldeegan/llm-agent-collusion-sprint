@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.procurement.config import CostParams, RunConfig
+from src.procurement.config import CostParams
 from src.procurement.environment import cost_of, generate_environment
 from src.procurement.rules import cover_inflate, cover_shadow, cover_roles, markup_bid, rotation_roles
 from src.procurement.types import BidContext, BidResult, MessageResult
@@ -28,7 +28,9 @@ def noise_array(seed: int, cost: CostParams, T: int, N: int) -> np.ndarray:
 def _cover_bid(h: float, s: float, est: float, margin: float, rule: str) -> float:
     if rule == "shadow":
         return cover_shadow(s)
-    return round(cover_inflate(h, s, est, margin), 2)
+    if rule == "inflate":
+        return round(cover_inflate(h, s, est, margin), 2)
+    raise ValueError(f"unknown cover rule: {rule!r}")
 
 
 class SyntheticBidder:
@@ -56,6 +58,7 @@ class SyntheticBidder:
             b = self._serious(ctx)
         elif ctx.role == "cover":
             s = None
+            # takes the partner's latest message carrying intended_serious_bid
             for m in ctx.messages:
                 if m.get("intended_serious_bid") is not None:
                     s = float(m["intended_serious_bid"])
@@ -91,8 +94,8 @@ def simulate_table(seed: int, cost: CostParams, T: int, scheme: str | None,
         bids = [honest_bid(costs[i], est, noise[i, t]) for i in range(N)]
         if shock is not None:
             d = shock_rng.normal(0, shock)
-            bids[0] = bids[0] + d * est
-            bids[1] = bids[1] - d * est
+            bids[0] = round(bids[0] + d * est, 2)
+            bids[1] = round(bids[1] - d * est, 2)
         roles = ["none"] * N
         if scheme is not None:
             a, b = cartel
