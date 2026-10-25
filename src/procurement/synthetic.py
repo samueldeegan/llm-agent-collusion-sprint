@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.procurement.config import CostParams
 from src.procurement.environment import cost_of, generate_environment
+from src.procurement.io import BIDS_COLUMNS, TRUTH_COLUMNS
 from src.procurement.rules import cover_inflate, cover_shadow, cover_roles, markup_bid, rotation_roles
 from src.procurement.types import BidContext, BidResult, MessageResult
 
@@ -118,8 +119,6 @@ def simulate_table(seed: int, cost: CostParams, T: int, scheme: str | None,
             trow.append((run_id, t + 1, env.names[i], i, costs[i], float(env.eps[i, t]),
                          float(env.nu[t]), int(roles[i] != "none"), roles[i], scheme or "none"))
         won[winner] += est
-    bids_df = pd.DataFrame(brow, columns=["run_id", "project_id", "firm_id", "est", "tag", "dist",
-                                          "cap", "firm_rate", "bid", "won"])
-    truth_df = pd.DataFrame(trow, columns=["run_id", "project_id", "firm_id", "seat", "cost", "eps",
-                                           "nu", "is_cartel", "cartel_role", "scheme"])
+    bids_df = pd.DataFrame(brow, columns=BIDS_COLUMNS)
+    truth_df = pd.DataFrame(trow, columns=TRUTH_COLUMNS)
     return bids_df, truth_df
