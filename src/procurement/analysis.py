@@ -13,8 +13,9 @@
 - ``README.md``, also written to ``results_root.parent / "README.md"`` (``results/README.md``).
 
 Reads: ``pair_stats.csv``, ``truth.csv``, ``bids.csv``, ``run_meta.json`` (through evaluation and the
-detector), ``excluded_runs.json``, ``scripted_signatures.csv`` and ``results/calibration.json``. Never
-messages, calls, transcripts, checkpoints or heartbeats.
+detector), ``excluded_runs.json``, ``scripted_signatures.csv``, ``results/calibration.json``,
+``results/STOP.json`` and the existence of a run dir's ``STOP`` marker (stop reasons of incomplete runs).
+Never messages, calls, transcripts, checkpoints or heartbeats.
 
 CLI: ``python -m src.procurement.analysis --results-root results/runs [--out DIR] [--scripted-csv PATH]``.
 """
@@ -34,13 +35,13 @@ from scipy import stats
 from src.procurement import detector, evaluation, io
 
 FLAG_RATES_COLUMNS = ["condition", "spec", "threshold", "pair_class", "test", "n_pairs", "n_flagged", "rate",
-                      "ci_low", "ci_high", "n_runs"]
+                      "ci_low", "ci_high", "n_runs", "in_sample"]
 EMPIRICAL_NULL_COLUMNS = ["spec", "test", "run_id", "firm_i", "firm_j", "value", "percentile_95"]
 POWER_COLUMNS = ["condition", "spec", "usable_T", "pair_class", "test", "n_pairs", "rate", "n_runs",
                  "top2_rate", "rank1_rate", "includes_incomplete"]
 ROBUSTNESS_COLUMNS = ["source", "condition", "spec", "rho0", "threshold", "row", "margin", "rule",
                       "serious_add", "sigma_eps", "pair_class", "test", "n_pairs", "n_flagged", "n", "rate",
-                      "ci_low", "ci_high", "n_runs", "mean_r", "top2", "rank1"]
+                      "ci_low", "ci_high", "n_runs", "in_sample", "mean_r", "top2", "rank1"]
 SCRIPTED_NAME = "scripted_signatures.csv"
 ANALYSIS_ROOT = "results/analysis"
 
@@ -145,7 +146,9 @@ def flag_rates(pair_eval: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
     Closed: ``a1_flag == 1`` / ``a3_flag == 1``; empirical: |z| > thresholds[(spec, "A1")] and
     F > thresholds[(spec, "A3")]; "both": both flagged under the same threshold type. ``n_pairs`` counts
     pairs with the needed statistic(s); ``rate = n_flagged / n_pairs``. Empirical rows exist only for the
-    specs in ``thresholds``. Rows exist only for the pair classes a condition has."""
+    specs in ``thresholds``. Rows exist only for the pair classes a condition has. ``in_sample`` is 1
+    exactly on the control rows at the empirical threshold: that threshold is the 95th percentile of
+    these same pairs, so their rate is about 5% by construction and is not a false-positive rate."""
     prim = _primary_complete(pair_eval)
     rows = []
     if prim.empty:
@@ -166,7 +169,8 @@ def flag_rates(pair_eval: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
                         n_runs, lo, hi = _clustered(g["run_id"], present, flagged)
                         rows.append(dict(condition=cond, spec=spec, threshold=threshold, pair_class=cls,
                                          test=test, n_pairs=n, n_flagged=k, rate=k / n if n else math.nan,
-                                         ci_low=lo, ci_high=hi, n_runs=n_runs))
+                                         ci_low=lo, ci_high=hi, n_runs=n_runs,
+                                         in_sample=int(cond == "control" and threshold == "empirical")))
     return pd.DataFrame(rows, columns=FLAG_RATES_COLUMNS)
 
 
@@ -284,23 +288,42 @@ def _df_den(ctrl_tag: pd.DataFrame) -> int | None:
     return int(round(float(np.median(dfs)))) if dfs else None
 
 
+def _df_exact(ctrl_tag: pd.DataFrame) -> bool:
+    """True when no control primary row lost a bid (every n_joint equals its usable_T), i.e. the
+    reconstructed n_rows of ``_df_den`` is the regression's row count."""
+    return bool(len(ctrl_tag)) and bool((_num(ctrl_tag, "n_joint") == _num(ctrl_tag, "usable_T")).all())
+
+
+def f_critical_label(q, df_den, exact: bool) -> str:
+    """The name of the closed-form A3 reference line; marked approximate when bids are missing."""
+    if exact:
+        return f"F({q}, {df_den}) 5% critical value"
+    return f"≈ F({q}, {df_den}) 5% critical value (df approximate: missing bids)"
+
+
 def control_distribution_figure(control_pair_eval: pd.DataFrame, scheme_pair_eval: pd.DataFrame, out_png,
                                 thresholds: dict | None = None) -> dict:
     """Two panels: control-pair |z| (A1) and F (A3), tag spec, primary rows of complete control runs.
 
-    Each panel marks the empirical threshold and the closed-form one (|z| = 1.96; the F(q, df) 5%
-    critical value with q and df the medians of the control rows, F(4, 567) at 600 rows and m = 33),
-    and each complete scheme run's cartel pair (marker per condition). Returns ``z_values`` (|z|, sorted),
-    ``F_values`` (sorted), ``marked`` [(condition, run_id, z, F)] with signed z (plotted at |z|), and
-    the reference lines (``z_threshold``, ``F_threshold``, ``F_critical``, ``df_num``, ``df_den``)."""
+    Each panel marks the empirical threshold and the closed-form one: |z| = 1.96, and the F(q, df) 5%
+    critical value, where q (``a3_df_num``) and df (n_rows - rank_u) are medians over the complete control
+    runs of each run's value; F(4, 567) at 600 rows and m = 33. pair_stats has no n_rows, so df is
+    reconstructed by ``_df_den``: exact when no control bid is missing, otherwise approximate and the
+    label says so (``F_label``, ``df_exact``). Each complete scheme run's cartel pair is marked (marker per
+    condition). Returns ``z_values`` (|z|, sorted), ``F_values`` (sorted), ``marked``
+    [(condition, run_id, z, F)] with signed z (plotted at |z|), and the reference lines
+    (``z_threshold``, ``F_threshold``, ``F_critical``, ``F_label``, ``df_num``, ``df_den``, ``df_exact``)."""
     thresholds = control_thresholds(control_pair_eval) if thresholds is None else thresholds
     ctrl = _primary_complete(control_pair_eval)
     ctrl = ctrl[(ctrl["spec"] == PRIMARY_SPEC) & (ctrl["condition"] == "control")] if len(ctrl) else ctrl
     z_values = np.sort(_num(ctrl, "z").abs().dropna().to_numpy(dtype=float)) if len(ctrl) else np.array([])
     F_values = np.sort(_num(ctrl, "F").dropna().to_numpy(dtype=float)) if len(ctrl) else np.array([])
     df_den = _df_den(ctrl) if len(ctrl) else None
-    q = int(round(float(_num(ctrl, "a3_df_num").dropna().median()))) if len(ctrl) else None
+    q_runs = _num(ctrl, "a3_df_num").groupby(ctrl["run_id"]).median().dropna() if len(ctrl) else pd.Series()
+    q = int(round(float(q_runs.median()))) if len(q_runs) else None
     F_crit = float(stats.f.isf(detector.A3_ALPHA, q, df_den)) if df_den and q else math.nan
+    df_exact = _df_exact(ctrl)
+    F_label = f_critical_label(q, df_den, df_exact)
 
     marked = []
     sch = _primary_complete(scheme_pair_eval)
@@ -318,7 +341,7 @@ def control_distribution_figure(control_pair_eval: pd.DataFrame, scheme_pair_eva
         (axes[0], z_values, [abs(m[2]) for m in marked], z_thr, detector.A1_CRITICAL,
          f"closed form |z| = {detector.A1_CRITICAL:.3f}", "A1: |z| of control pairs (tag spec)", "|z|"),
         (axes[1], F_values, [m[3] for m in marked], F_thr, F_crit,
-         f"F({q}, {df_den}) 5% = {F_crit:.3f}" if not math.isnan(F_crit) else "closed form n/a",
+         f"{F_label} = {F_crit:.3f}" if not math.isnan(F_crit) else "closed form n/a",
          "A3: F of control pairs (tag spec)", "F"),
     )
     for ax, values, marks, emp, closed, closed_label, title, xlabel in panels:
@@ -358,7 +381,7 @@ def control_distribution_figure(control_pair_eval: pd.DataFrame, scheme_pair_eva
                   labelcolor=_INK)
     fig.savefig(out_png, dpi=150, facecolor=_SURFACE)
     return dict(z_values=z_values, F_values=F_values, marked=marked, z_threshold=z_thr, F_threshold=F_thr,
-                F_critical=F_crit, df_num=q, df_den=df_den)
+                F_critical=F_crit, F_label=F_label, df_num=q, df_den=df_den, df_exact=df_exact)
 
 
 # ------------------------------------------------------------------ README
@@ -387,10 +410,18 @@ def _cell(df: pd.DataFrame, **kw):
     return sub.iloc[0] if len(sub) else None
 
 
+IN_SAMPLE_MARK = "†"
+IN_SAMPLE_NOTE = (f"{IN_SAMPLE_MARK} in-sample: the empirical threshold is the 95th percentile of these same control "
+                  "pairs, so this rate is about 5% by construction and is not a validated false-positive rate.")
+CI_NOTE = ("With few runs (n_runs < 5) the interval is unreliable; with identical per-run rates it has zero "
+           "width.")
+
+
 def _rate_frac(row) -> str:
     if row is None:
         return "n/a"
-    return f"{_f(row['rate'])} ({int(row['n_flagged'])}/{int(row['n_pairs'])})"
+    mark = IN_SAMPLE_MARK if "in_sample" in row and not _isnan(row["in_sample"]) and int(row["in_sample"]) else ""
+    return f"{_f(row['rate'])} ({int(row['n_flagged'])}/{int(row['n_pairs'])}){mark}"
 
 
 def _rate_ci(row) -> str:
@@ -414,13 +445,32 @@ def _flag_table(flags: pd.DataFrame, spec: str) -> list[str]:
                     continue
                 n_runs = next(int(c["n_runs"]) for c in cells if c is not None)
                 rows.append([cond, th, cls, *[_rate_frac(c) for c in cells], n_runs])
-    return _table(["condition", "threshold", "pair class", "A1", "A3", "both", "runs"], rows)
+    out = _table(["condition", "threshold", "pair class", "A1", "A3", "both", "runs"], rows)
+    if "in_sample" in fr and (_num(fr, "in_sample") == 1).any():
+        out += ["", IN_SAMPLE_NOTE]
+    return out
+
+
+def stop_reason(run_dir, run_id: str, stop_json: dict | None) -> str:
+    """Why an incomplete run stopped: the ``results/STOP.json`` reason when it lists the run (by run_id or
+    directory name in ``runs_incomplete``), "stopped (STOP file)" when the run dir holds a ``STOP`` file,
+    else "did not finish"."""
+    run_dir = Path(run_dir)
+    if stop_json:
+        listed = stop_json.get("runs_incomplete")
+        names = {str(x) for x in listed} if isinstance(listed, (list, tuple)) else set()
+        names |= {Path(x).name for x in names}
+        if run_id in names or run_dir.name in names:
+            return str(stop_json.get("reason") or "stopped (STOP.json, no reason given)")
+    if (run_dir / "STOP").is_file():
+        return "stopped (STOP file)"
+    return "did not finish"
 
 
 def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd.DataFrame,
                    null: pd.DataFrame, power: pd.DataFrame, robustness: pd.DataFrame, thresholds: dict,
                    figure: dict, excluded: list[dict], calibration: dict | None, scripted_given: bool,
-                   results_root=None, analysis_dir=None) -> str:
+                   results_root=None, analysis_dir=None, stop_reasons: dict | None = None) -> str:
     """``results/README.md``: every number the paper needs (step-4 audit Part 4.2 step 9), 3 decimals."""
     notes: list[str] = []
     L: list[str] = ["# Results: Bajari-Ye procurement experiment", ""]
@@ -451,8 +501,9 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
         L.append("")
         rows = []
         for r, ok in zip(re_.to_dict("records"), complete):
+            reason = (stop_reasons or {}).get(r["run_id"], "did not finish")
             status = ("complete" if ok else
-                      f"incomplete: the run did not finish ({int(r['projects_completed'])} projects completed); "
+                      f"incomplete: {reason} ({int(r['projects_completed'])} projects completed); "
                       "excluded from flag rates and the empirical null, included in power vs T")
             rows.append([r["run_id"], r["condition"], int(r["seed"]), f"`{r['run_dir']}`", status,
                          int(r["projects_completed"])])
@@ -496,8 +547,8 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
                              _f(thresholds.get((spec, test)))])
         L += _table(["spec", "statistic", "values", "5%", "50%", "95%", "empirical threshold"], rows)
         L.append("")
-        L.append(f"Closed-form references: |z| = {detector.A1_CRITICAL:.3f}; F({figure.get('df_num')}, "
-                 f"{figure.get('df_den')}) 5% critical value = {_f(figure.get('F_critical'))}.")
+        L.append(f"Closed-form references: |z| = {detector.A1_CRITICAL:.3f}; {figure.get('F_label')} = "
+                 f"{_f(figure.get('F_critical'))} (q and df are medians over the complete control runs).")
     L.append("")
     if figure.get("marked"):
         L.append("Cartel pairs marked in the figure (tag spec, primary rows):")
@@ -515,7 +566,7 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
     # ---- mixed-pair A3
     L += ["## Mixed-pair A3 per scheme", "",
           "Rate [95% interval clustered by run: mean of per-run rates +- 1.96 SE], tag spec, complete runs; "
-          "outsider pairs for comparison.", ""]
+          "outsider pairs for comparison. " + CI_NOTE, ""]
     tag_flags = flags[flags["spec"] == PRIMARY_SPEC] if len(flags) else flags
     rows = []
     for cond in schemes:
@@ -619,7 +670,10 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
         notes.append(f"scripted robustness rows: {SCRIPTED_NAME} is empty")
     else:
         L.append("Synthetic bids with the scheme applied in-loop, cartel seats (0, 1), tag spec, usable 100 "
-                 "(spec §6.6); copied verbatim into `robustness.csv`.")
+                 "(spec §6.6); copied verbatim into `robustness.csv`. Denominators differ from the real-run "
+                 "tables: a scripted row counts a pair with a missing statistic as not flagged (n = every pair "
+                 "of the class), while the real-run rows exclude it from n_pairs; the two bases differ only "
+                 "when statistics are missing.")
         L.append("")
         rows = []
         for name in dict.fromkeys(sc["row"]):
@@ -705,6 +759,12 @@ def analyze(results_root, out_dir, scripted_csv=None) -> Path:
     figure = control_distribution_figure(pair_eval[is_ctrl] if len(pair_eval) else pair_eval,
                                          pair_eval[~is_ctrl] if len(pair_eval) else pair_eval,
                                          out_dir / "control_distributions.png", thresholds)
+    stop_path = results_root.parent / "STOP.json"
+    stop_json = json.loads(stop_path.read_text(encoding="utf-8")) if stop_path.is_file() else None
+    stop_reasons = {}
+    for r in (run_eval.to_dict("records") if len(run_eval) else []):
+        if _isnan(r["complete"]) or int(r["complete"]) != 1:
+            stop_reasons[r["run_id"]] = stop_reason(results_root / str(r["run_dir"]), r["run_id"], stop_json)
     cal_path = results_root.parent / "calibration.json"
     calibration = json.loads(cal_path.read_text(encoding="utf-8")) if cal_path.is_file() else None
 
@@ -715,7 +775,8 @@ def analyze(results_root, out_dir, scripted_csv=None) -> Path:
     text = readme_numbers(pair_eval=pair_eval, run_eval=run_eval, flags=flags, null=null, power=power,
                           robustness=robust, thresholds=thresholds, figure=figure, excluded=excluded,
                           calibration=calibration, scripted_given=scripted is not None,
-                          results_root=results_root.as_posix(), analysis_dir=out_dir.as_posix())
+                          results_root=results_root.as_posix(), analysis_dir=out_dir.as_posix(),
+                          stop_reasons=stop_reasons)
     for path in (out_dir / "README.md", results_root.parent / "README.md"):
         path.write_text(text, encoding="utf-8", newline="\n")
     return out_dir

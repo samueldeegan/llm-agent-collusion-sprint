@@ -1,5 +1,6 @@
 """Analysis layer: flag-rate table, empirical null, power vs T, robustness, figure, README (spec §4g
 "Analysis output", §4h, §6.11)."""
+import csv
 import json
 import math
 import os
@@ -17,7 +18,7 @@ from src.procurement import analysis
 from src.procurement.analysis import (EMPIRICAL_NULL_COLUMNS, FLAG_RATES_COLUMNS, POWER_COLUMNS,
                                       ROBUSTNESS_COLUMNS, analyze, control_distribution_figure,
                                       control_thresholds, empirical_null_table, flag_rates, main,
-                                      power_vs_T_table, robustness_table)
+                                      power_vs_T_table, robustness_table, stop_reason)
 from src.procurement.config import RunConfig
 from src.procurement.detector import empirical_thresholds
 from src.procurement.evaluation import a3_top2
@@ -187,7 +188,10 @@ def test_control_distribution_figure(fx, tmp_path):
         assert z == pytest.approx(cart.z) and F == pytest.approx(cart.F)
     # F(4, 567) critical value from the actual df (600 rows, rank 33)
     assert info["F_critical"] == pytest.approx(stats.f.isf(0.05, 4, 567))
-    assert info["df_den"] == 567
+    assert info["df_den"] == 567 and info["df_num"] == 4
+    assert info["df_exact"] is True and info["F_label"] == "F(4, 567) 5% critical value"
+    text = (fx["out"] / "README.md").read_text(encoding="utf-8")
+    assert "F(4, 567) 5% critical value = " in text and "df approximate" not in text
 
 
 # ------------------------------------------------------------------ power vs T and robustness
@@ -326,8 +330,92 @@ def test_incomplete_runs_in_analysis(fx, tmp_path):
     text = (out / "README.md").read_text(encoding="utf-8")
     inventory = text.split("## Run inventory")[1].split("\n## ")[0]
     line = next(ln for ln in inventory.splitlines() if "control_s3" in ln)
-    assert "incomplete" in line and "60" in line
+    assert "incomplete: stopped (STOP file) (60 projects completed)" in line
     assert "no scheme run" in text.split("## Not computed")[1]
+    # results/STOP.json listing the run gives the launcher's stop reason
+    stop = {"reason": "spend guard: projected 80.00 USD > 75", "actual_usd": 40.0, "projected_usd": 80.0,
+            "utc": "2026-10-26T03:00:00+00:00", "runs_complete": ["control_s1"], "runs_incomplete": ["control_s3"]}
+    (tmp_path / "results" / "STOP.json").write_text(json.dumps(stop), encoding="utf-8")
+    out2 = tmp_path / "results" / "analysis" / "y"
+    analyze(root, out2)
+    text = (out2 / "README.md").read_text(encoding="utf-8")
+    line = next(ln for ln in text.split("## Run inventory")[1].splitlines() if "control_s3" in ln)
+    assert f"incomplete: {stop['reason']} (60 projects completed)" in line
+
+
+# ------------------------------------------------------------------ review fixes: in-sample, df, stop reasons
+
+def test_in_sample_control_rates_marked(fx):
+    fr = pd.read_csv(fx["out"] / "flag_rates.csv")
+    expected = ((fr.condition == "control") & (fr.threshold == "empirical")).astype(int)
+    assert fr.in_sample.tolist() == expected.tolist() and expected.sum() == 2 * 3  # 2 specs x 3 tests
+    assert _read(fx["out"] / "flag_rates.csv")["in_sample"].isin(["0", "1"]).all()
+    text = (fx["out"] / "README.md").read_text(encoding="utf-8")
+    flag_section = text.split("## Flag rates (tag spec)")[1].split("\n## ")[0]
+    note = ("\u2020 in-sample: the empirical threshold is the 95th percentile of these same control pairs, so "
+            "this rate is about 5% by construction and is not a validated false-positive rate.")
+    assert note in flag_section
+    for line in flag_section.splitlines():
+        if line.startswith("| control | empirical"):
+            assert line.count("\u2020") == 3, line  # A1, A3 and both cells
+        elif line.startswith("| "):
+            assert "\u2020" not in line, line
+    fe_section = text.split("### Project-FE specification")[1].split("\n### ")[0]
+    assert note in fe_section
+    rb = pd.read_csv(fx["out"] / "robustness.csv", keep_default_na=False, dtype=str)
+    fe = rb[rb.source == "project_fe"]
+    want = ((fe.condition == "control") & (fe.threshold == "empirical")).astype(int).astype(str)
+    assert (fe.in_sample == want).all()
+    assert "n_runs < 5" in text and "zero width" in text  # CI caveat
+    assert "missing statistic as not flagged" in text  # scripted vs real denominators
+
+
+def _blank_one_bid(run_dir: Path, project_id: int) -> str:
+    """Remove one losing bid of ``project_id`` from bids.csv (empty field) and return its firm."""
+    path = run_dir / "bids.csv"
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    head = rows[0]
+    k = next(i for i, r in enumerate(rows[1:], 1)
+             if int(r[head.index("project_id")]) == project_id and r[head.index("won")] == "0")
+    rows[k][head.index("bid")] = ""
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        csv.writer(f, lineterminator="\n").writerows(rows)
+    return rows[k][head.index("firm_id")]
+
+
+def test_figure_df_approximate_with_missing_bid(fx, tmp_path):
+    root = tmp_path / "results" / "runs"
+    root.mkdir(parents=True)
+    for run_id in ("control_s1", "control_s2"):
+        d = shutil.copytree(fx["dirs"][run_id], root / fx["dirs"][run_id].name)
+        shutil.rmtree(d / "detector")  # evaluation re-runs the detector on the edited table
+    _blank_one_bid(root / fx["dirs"]["control_s1"].name, 50)
+    out = tmp_path / "results" / "analysis" / "x"
+    analyze(root, out)
+    pe = pd.read_csv(out / "evaluation" / "pair_eval.csv", keep_default_na=False, na_values=[""])
+    prim = _prim(pe)
+    assert (prim.n_joint < prim.usable_T).any()  # the missing bid reached the primary rows
+    info = control_distribution_figure(pe, pe.iloc[0:0], tmp_path / "fig.png")
+    assert info["df_exact"] is False
+    assert info["F_label"] == (f"\u2248 F({info['df_num']}, {info['df_den']}) 5% critical value "
+                               "(df approximate: missing bids)")
+    text = (out / "README.md").read_text(encoding="utf-8")
+    assert f"{info['F_label']} = {info['F_critical']:.3f}" in text
+    assert "medians over the complete control runs" in text
+
+
+def test_stop_reason(tmp_path):
+    d = tmp_path / "20261026_010203_cover_s4"
+    d.mkdir()
+    assert stop_reason(d, "cover_s4", None) == "did not finish"
+    assert stop_reason(d, "cover_s4", {"reason": "spend", "runs_incomplete": ["control_s1"]}) == "did not finish"
+    (d / "STOP").touch()
+    assert stop_reason(d, "cover_s4", None) == "stopped (STOP file)"
+    listed = {"reason": "spend guard: projected 80.00 USD > 75", "runs_incomplete": [str(d)]}
+    assert stop_reason(d, "cover_s4", listed) == listed["reason"]  # listed by directory path
+    assert stop_reason(d, "cover_s4", {"reason": "time ladder", "runs_incomplete": ["cover_s4"]}) == "time ladder"
+    assert stop_reason(d, "cover_s4", {"reason": "x", "runs_incomplete": 3}) == "stopped (STOP file)"
 
 
 # ------------------------------------------------------------------ reads
@@ -361,6 +449,8 @@ def test_analysis_reads_allowed_files_only(fx, tmp_path):
             for name in ("messages.csv", "calls.csv", "checkpoint.json", "heartbeat.json"):
                 assert (d / name).is_file(), name
     (tmp_path / "results" / "calibration.json").write_text(json.dumps(CALIBRATION), encoding="utf-8")
+    (tmp_path / "results" / "STOP.json").write_text(json.dumps({"reason": "test", "runs_incomplete": []}),
+                                                    encoding="utf-8")
     scripted_csv = tmp_path / "scripted_signatures.csv"
     shutil.copy(fx["scripted_csv"], scripted_csv)
     out = tmp_path / "results" / "analysis" / "r"
@@ -375,10 +465,10 @@ def test_analysis_reads_allowed_files_only(fx, tmp_path):
     base = tmp_path.resolve()
     reads = {p.resolve() for p, reading in opened if reading and p.resolve().is_relative_to(base)}
     allowed = {"pair_stats.csv", "truth.csv", "bids.csv", "run_meta.json", "pair_eval.csv", "run_eval.csv",
-               "excluded_runs.json", "scripted_signatures.csv", "calibration.json"}
+               "excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "STOP"}
     assert {p.name for p in reads} <= allowed, {p.name for p in reads} - allowed
     assert not any("transcripts" in p.parts for p in reads)
-    for name in ("excluded_runs.json", "scripted_signatures.csv", "calibration.json", "bids.csv"):
+    for name in ("excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "bids.csv"):
         assert any(p.name == name for p in reads), name  # the monitor sees the reads it should
 
     fr = pd.read_csv(out / "flag_rates.csv")
