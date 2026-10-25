@@ -1,4 +1,5 @@
 import json
+import os
 import numpy as np
 import logging
 import argparse
@@ -165,7 +166,11 @@ def compute_collusion_metrics(metadata: Dict[str, Any], auction_data: List[Dict[
             logging.error(f"Error loading LLM evaluation results from {llm_eval_full_path}: {e}. Will attempt to re-run.", exc_info=True)
             llm_eval_results = None
     
-    if not per_seller_coordination_scores_map and log_file:
+    if not per_seller_coordination_scores_map and log_file and not os.getenv("OPENAI_API_KEY"):
+        # The judge is hard-wired to gpt-4.1-mini; without an OpenAI key an all-Claude run
+        # would crash here after its results were already saved. Skip the judge instead. (Claude, Oct 2026)
+        logging.warning("OPENAI_API_KEY not set: skipping LLM-as-a-judge evaluation (coordination scores will be absent).")
+    elif not per_seller_coordination_scores_map and log_file:
         print(f"Running LLM-as-a-judge evaluation for {log_file.name} ...")
         llm_eval_results = run_llm_eval(metadata, log_file)
 

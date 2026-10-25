@@ -162,16 +162,23 @@ class AnthropicClient(ModelWrapper):
 
         for attempt in range(self.max_retries):
             try:
+                # temperature/top_p are not sent: Claude 5-family models (e.g. claude-haiku-5-5) reject
+                # sampling parameters with a 400 "`temperature` is deprecated for this model". The
+                # --temperature CLI flag therefore has no effect on Claude models. (Claude, Oct 2026)
                 response = self.client.messages.create(
                     model=self.model_name,
                     system=system,
                     messages=messages,
                     max_tokens=self.max_tokens,
-                    temperature=self.temperature,
-                    # top_p removed: current Claude models reject requests that set both temperature and top_p (Claude, Oct 2026)
                     **self.additional_params
                 )
-                return response.content[0].text
+                # Thinking is on by default on Claude 5-family models, so content[0] may be a
+                # thinking block; return the first text block instead. (Claude, Oct 2026)
+                for block in response.content:
+                    if getattr(block, "type", None) == "text":
+                        return block.text
+                logger.error(f"Anthropic response contained no text block: {response.content}")
+                return None
 
             except (APIConnectionError, RateLimitError, APIStatusError) as e:
                 logger.warning(f"Anthropic API error (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
