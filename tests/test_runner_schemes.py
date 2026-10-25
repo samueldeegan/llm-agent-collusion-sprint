@@ -1,5 +1,6 @@
 """Scheme runs on the synthetic bidder, checkpoint resume, and equivalence with ``simulate_table``."""
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -14,10 +15,11 @@ from src.procurement.environment import generate_environment
 from src.procurement.io import (BIDS_COLUMNS, CALLS_COLUMNS, MESSAGES_COLUMNS, TRUTH_COLUMNS,
                                 read_checkpoint, read_run_meta)
 from src.procurement.rules import cover_roles, rotation_roles
-from src.procurement.runner import resolve_cartel_seats, run, run_in_memory
+from src.procurement.runner import _transcript_upto, resolve_cartel_seats, run, run_in_memory
 from src.procurement.synthetic import (SyntheticBidder, honest_bid, noise_array, simulate_table,
                                        synthetic_bidder_factory)
 from src.procurement.types import MessageResult
+from tests.conftest import api_guard
 
 COST = CostParams(0.90, 0.08, 0.17, 0.05)
 SCHEMES = ("cover", "rotation", "markup")
@@ -27,15 +29,17 @@ RUN_FILES = ["bids.csv", "truth.csv", "messages.csv", "calls.csv", "run_meta.jso
 CSV_FILES = ["bids.csv", "truth.csv", "messages.csv", "calls.csv"]
 META_KEYS = {"purpose", "condition", "scheme", "seed", "T", "burn_in", "cartel_seats", "seat_to_firm",
              "cost", "windows", "model", "max_tokens", "effort", "bidder", "concurrency",
-             "api_key_slot", "frozen_from", "limits", "started_utc", "finished_utc", "git_commit"}
+             "api_key_slot", "frozen_from", "limits", "started_utc", "finished_utc", "git_commit",
+             "scripted"}
 ENV1 = generate_environment(1, COST, 110, 6)
 
 
 @pytest.fixture(scope="module")
 def scheme_runs(tmp_path_factory):
     root = tmp_path_factory.mktemp("scheme_runs")
-    return {c: run(RunConfig(condition=c, seed=1), synthetic_bidder_factory, results_root=root / c)
-            for c in SCHEMES}
+    with api_guard():  # the function-scoped guard is not active in module fixtures
+        return {c: run(RunConfig(condition=c, seed=1), synthetic_bidder_factory, results_root=root / c)
+                for c in SCHEMES}
 
 
 def _only_dir(root: Path) -> Path:
@@ -346,9 +350,12 @@ def test_outsiders_parallel_with_message():
             order = 1 if ctx.messages == [] else 2
             with lock:
                 events.append((f"msg{order}", ctx.t, ctx.seat))
+            result = self.inner.message(ctx)
             if order == 1:
                 time.sleep(0.05)  # message 1 is slow; outsiders must not wait for it
-            return self.inner.message(ctx)
+                with lock:
+                    events.append(("msg1_return", ctx.t, ctx.seat))
+            return result
 
     cfg = RunConfig(condition="cover", seed=1, T=4)
     bids, _, _ = run_in_memory(cfg, Stamp)
@@ -357,13 +364,14 @@ def test_outsiders_parallel_with_message():
         ev = [e for e in events if e[1] == t]
         pos = {e: i for i, e in enumerate(ev)}
         m1 = [i for i, e in enumerate(ev) if e[0] == "msg1"]
+        m1_ret = [i for i, e in enumerate(ev) if e[0] == "msg1_return"]
         m2 = [i for i, e in enumerate(ev) if e[0] == "msg2"]
-        assert len(m1) == len(m2) == 1
+        assert len(m1) == len(m1_ret) == len(m2) == 1
         outsider = [pos[("bid", t, s)] for s in range(6) if s not in seats]
         cartel = [pos[("bid", t, s)] for s in seats]
         assert len(outsider) == 4
-        assert max(outsider) < m2[0]
-        assert m1[0] < m2[0] < min(cartel)
+        assert max(outsider) < m1_ret[0]  # every outsider bid STARTS before message 1 RETURNS
+        assert m1[0] < m1_ret[0] < m2[0] < min(cartel)
     eb, _ = simulate_table(1, COST, 4, "cover", (0, 3))
     pd.testing.assert_frame_equal(bids, eb, check_dtype=False, check_exact=True)
 
@@ -434,7 +442,58 @@ def _crash_factory(pid, where):
     return lambda cfg, env: _CrashOnce(cfg, env, pid, where)
 
 
-def _assert_resumed(old: Path, new: Path, ref: Path, before: dict):
+@pytest.fixture(scope="module")
+def reference(tmp_path_factory):
+    """Uninterrupted synthetic run per config, built once per module (under the API guard)."""
+    root = tmp_path_factory.mktemp("reference")
+    cache = {}
+
+    def get(cfg):
+        key = (cfg.condition, cfg.seed, cfg.T)
+        if key not in cache:
+            with api_guard():
+                cache[key] = run(cfg, synthetic_bidder_factory, results_root=root / "_".join(map(str, key)))
+        return cache[key]
+
+    return get
+
+
+class _RawBidder:
+    """Synthetic bidder that returns raw text and call records (so transcripts and calls.csv fill)."""
+
+    def __init__(self, cfg, env, crash_pid=None):
+        self.inner = SyntheticBidder(cfg.seed, cfg.cost, cfg.T, cfg.N)
+        self.crash_pid = crash_pid
+
+    def bid(self, ctx):
+        if ctx.t + 1 == self.crash_pid:
+            raise RuntimeError("crash")
+        r = self.inner.bid(ctx)
+        r.raw = f"bid raw {ctx.t + 1}"
+        r.call_records = [{"attempt": 1, "latency_ms": 5, "reason": ""}]
+        return r
+
+    def message(self, ctx):
+        r = self.inner.message(ctx)
+        r.raw = f"msg raw {ctx.t + 1}"
+        r.call_records = [{"attempt": 1, "latency_ms": 7, "reason": ""}]
+        return r
+
+
+def _torn_at(monkeypatch, pid: int):
+    """Make the checkpoint write of project ``pid`` fail: CSVs and transcripts end one project ahead."""
+    real = io.write_checkpoint
+
+    def torn(run_dir, state):
+        if state["last_completed_project"] == pid:
+            raise OSError("disk went away")
+        real(run_dir, state)
+
+    monkeypatch.setattr(io, "write_checkpoint", torn)
+    return lambda: monkeypatch.setattr(io, "write_checkpoint", real)
+
+
+def _assert_resumed(old: Path, new: Path, ref: Path, before: dict, T: int = 110):
     assert new != old and new.parent == old.parent
     assert _snapshot(old) == before  # the crashed directory is never rewritten
     for name in CSV_FILES:
@@ -446,12 +505,13 @@ def _assert_resumed(old: Path, new: Path, ref: Path, before: dict):
     assert meta["finished_utc"] is not None and old_meta["finished_utc"] is None
     assert set(read_run_meta(ref)) == META_KEYS
     cp = read_checkpoint(new)
-    assert cp["last_completed_project"] == 110 and Path(cp["run_dir"]) == new
+    assert cp["last_completed_project"] == T and Path(cp["run_dir"]) == new
     hb = json.loads((new / "heartbeat.json").read_text(encoding="utf-8"))
-    assert hb["last_completed_project"] == 110
+    assert hb["last_completed_project"] == T
 
 
-def test_checkpoint_resume(tmp_path):
+def test_checkpoint_resume(tmp_path, reference):
+    """The one full-length (T = 110) resume: crash on the first bid call of project 38."""
     cfg = RunConfig(condition="cover", seed=2)
     root = tmp_path / "runs"
     with pytest.raises(RuntimeError, match="crash at project 38"):
@@ -463,15 +523,14 @@ def test_checkpoint_resume(tmp_path):
     before = _snapshot(old)
 
     new = run(cfg, synthetic_bidder_factory, resume_dir=old)
-    ref = run(cfg, synthetic_bidder_factory, results_root=tmp_path / "ref")
-    _assert_resumed(old, new, ref, before)
+    _assert_resumed(old, new, reference(cfg), before)
     cp = read_checkpoint(new)
     assert len(cp["history"]) == 110 and len(cp["messages"]) == 220
 
 
 @pytest.mark.parametrize("where", ["message2", "first_bid", "cartel_bid"])
-def test_checkpoint_resume_mid_project(tmp_path, where):
-    cfg = RunConfig(condition="cover", seed=2)
+def test_checkpoint_resume_mid_project(tmp_path, reference, where):
+    cfg = RunConfig(condition="cover", seed=2, T=50)  # shorter season, same crash project 40
     root = tmp_path / "runs"
     with pytest.raises(RuntimeError, match="crash at project 40"):
         run(cfg, _crash_factory(40, where), results_root=root)
@@ -484,25 +543,17 @@ def test_checkpoint_resume_mid_project(tmp_path, where):
     m = pd.read_csv(new / "messages.csv")
     assert len(m[m.project_id == 40]) == 2
     assert list(m[m.project_id == 40]["order"]) == [1, 2]
-    assert len(m) == 220
-    ref = run(cfg, synthetic_bidder_factory, results_root=tmp_path / "ref")
-    _assert_resumed(old, new, ref, before)
+    assert len(m) == 100
+    _assert_resumed(old, new, reference(cfg), before, T=50)
 
 
-def test_resume_drops_rows_beyond_checkpoint(tmp_path, monkeypatch):
+def test_resume_drops_rows_beyond_checkpoint(tmp_path, monkeypatch, reference):
     """A crash between the CSV appends and the checkpoint leaves rows one project ahead."""
     cfg = RunConfig(condition="cover", seed=1, T=20)
-    real = io.write_checkpoint
-
-    def torn(run_dir, state):
-        if state["last_completed_project"] == 12:
-            raise OSError("disk went away")
-        real(run_dir, state)
-
-    monkeypatch.setattr(io, "write_checkpoint", torn)
+    restore = _torn_at(monkeypatch, 12)
     with pytest.raises(OSError):
         run(cfg, synthetic_bidder_factory, results_root=tmp_path / "runs")
-    monkeypatch.setattr(io, "write_checkpoint", real)
+    restore()
     old = _only_dir(tmp_path / "runs")
     assert read_checkpoint(old)["last_completed_project"] == 11
     assert pd.read_csv(old / "bids.csv")["project_id"].max() == 12  # one project past the checkpoint
@@ -510,7 +561,7 @@ def test_resume_drops_rows_beyond_checkpoint(tmp_path, monkeypatch):
     before = _snapshot(old)
 
     new = run(cfg, synthetic_bidder_factory, resume_dir=old)
-    ref = run(cfg, synthetic_bidder_factory, results_root=tmp_path / "ref")
+    ref = reference(cfg)
     assert _snapshot(old) == before
     for name in CSV_FILES:
         assert (new / name).read_bytes() == (ref / name).read_bytes(), name
@@ -518,32 +569,13 @@ def test_resume_drops_rows_beyond_checkpoint(tmp_path, monkeypatch):
 
 
 def test_resume_copies_transcripts_and_calls(tmp_path):
-    class RawBidder:
-        def __init__(self, cfg, env, crash_pid=None):
-            self.inner = SyntheticBidder(cfg.seed, cfg.cost, cfg.T, cfg.N)
-            self.crash_pid = crash_pid
-
-        def bid(self, ctx):
-            if ctx.t + 1 == self.crash_pid:
-                raise RuntimeError("crash")
-            r = self.inner.bid(ctx)
-            r.raw = f"bid raw {ctx.t + 1}"
-            r.call_records = [{"attempt": 1, "latency_ms": 5, "reason": ""}]
-            return r
-
-        def message(self, ctx):
-            r = self.inner.message(ctx)
-            r.raw = f"msg raw {ctx.t + 1}"
-            r.call_records = [{"attempt": 1, "latency_ms": 7, "reason": ""}]
-            return r
-
     cfg = RunConfig(condition="markup", seed=1, T=6)
     root = tmp_path / "runs"
     with pytest.raises(RuntimeError):
-        run(cfg, lambda c, e: RawBidder(c, e, crash_pid=4), results_root=root)
+        run(cfg, lambda c, e: _RawBidder(c, e, crash_pid=4), results_root=root)
     old = _only_dir(root)
     before = _snapshot(old)
-    new = run(cfg, lambda c, e: RawBidder(c, e), resume_dir=old)
+    new = run(cfg, lambda c, e: _RawBidder(c, e), resume_dir=old)
     assert _snapshot(old) == before
 
     calls = pd.read_csv(new / "calls.csv", keep_default_na=False)
@@ -564,44 +596,87 @@ def test_resume_copies_transcripts_and_calls(tmp_path):
     assert "(message)" not in outsider_t
 
 
+_STAMP = re.compile(r" - \d{4}-\d\d-\d\dT[0-9:.+]+$", re.M)
+
+
+def test_resume_transcripts_cut_at_checkpoint(tmp_path, monkeypatch):
+    """Torn crash at project 4: the old transcripts already hold project 4; the resumed run's do not
+    duplicate it, and the entries kept from the old run are byte-identical."""
+    cfg = RunConfig(condition="markup", seed=1, T=6)
+    restore = _torn_at(monkeypatch, 4)
+    with pytest.raises(OSError):
+        run(cfg, lambda c, e: _RawBidder(c, e), results_root=tmp_path / "runs")
+    restore()
+    old = _only_dir(tmp_path / "runs")
+    assert read_checkpoint(old)["last_completed_project"] == 3
+    before = _snapshot(old)
+    new = run(cfg, lambda c, e: _RawBidder(c, e), resume_dir=old)
+    ref = run(cfg, lambda c, e: _RawBidder(c, e), results_root=tmp_path / "ref")
+    assert _snapshot(old) == before
+
+    names = generate_environment(1, COST, 6, 6).names
+    for name in names:
+        old_t = (old / "transcripts" / f"{name}.md").read_text(encoding="utf-8")
+        new_t = (new / "transcripts" / f"{name}.md").read_text(encoding="utf-8")
+        ref_t = (ref / "transcripts" / f"{name}.md").read_text(encoding="utf-8")
+        assert "## Prompt: Project 4 (bid)" in old_t  # the torn project reached the old transcript
+        cut = old_t.index("\n## Prompt: Project 4 (")
+        assert new_t.startswith(old_t[:cut])  # kept entries byte-identical
+        for p in range(1, 7):
+            assert new_t.count(f"## Prompt: Project {p} (bid)") == 1
+            assert new_t.count(f"## Response: Project {p} (bid)") == 1
+        assert _STAMP.sub("", new_t) == _STAMP.sub("", ref_t)
+
+
+def test_transcript_filter_ignores_headers_inside_fences():
+    entry = ("\n## Prompt: Project {p} (bid) - 2026-10-25T00:00:00+00:00\n``````\n{prompt}\n``````\n"
+             "\n## Response: Project {p} (bid) - 2026-10-25T00:00:00+00:00\n````\n{raw}\n````\n")
+    tricky = entry.format(p=2, prompt="## Prompt: Project 9 (bid)\n\nbody", raw="## Response: Project 9 (x)")
+    text = entry.format(p=1, prompt="a", raw="b") + tricky + entry.format(p=3, prompt="c", raw="d")
+    assert _transcript_upto(text, 2) == entry.format(p=1, prompt="a", raw="b") + tricky
+    assert _transcript_upto(text, 3) == text
+    assert _transcript_upto(text, 0) == ""
+
+
+class _Stateful:
+    def __init__(self, cfg, env, crash_pid=None, seen=None):
+        self.inner = SyntheticBidder(cfg.seed, cfg.cost, cfg.T, cfg.N)
+        self.n_bids = 0
+        self.lock = threading.Lock()
+        self.crash_pid = crash_pid
+        self.seen = seen if seen is not None else {}
+
+    def get_state(self):
+        return {"n_bids": self.n_bids}
+
+    def set_state(self, state):
+        self.seen["state"] = dict(state)
+        self.n_bids = state["n_bids"]
+
+    def bid(self, ctx):
+        if ctx.t + 1 == self.crash_pid:
+            raise RuntimeError("crash")
+        with self.lock:
+            self.n_bids += 1
+        return self.inner.bid(ctx)
+
+    def message(self, ctx):
+        return self.inner.message(ctx)
+
+
 def test_resume_restores_bidder_state(tmp_path):
     seen = {}
-
-    class Stateful:
-        def __init__(self, cfg, env, crash_pid=None):
-            self.inner = SyntheticBidder(cfg.seed, cfg.cost, cfg.T, cfg.N)
-            self.n_bids = 0
-            self.lock = threading.Lock()
-            self.crash_pid = crash_pid
-
-        def get_state(self):
-            return {"n_bids": self.n_bids}
-
-        def set_state(self, state):
-            seen["state"] = dict(state)
-            self.n_bids = state["n_bids"]
-
-        def bid(self, ctx):
-            if ctx.t + 1 == self.crash_pid:
-                raise RuntimeError("crash")
-            with self.lock:
-                self.n_bids += 1
-            return self.inner.bid(ctx)
-
-        def message(self, ctx):
-            return self.inner.message(ctx)
-
     cfg = RunConfig(condition="rotation", seed=1, T=10)
     root = tmp_path / "runs"
     with pytest.raises(RuntimeError):
-        run(cfg, lambda c, e: Stateful(c, e, crash_pid=6), results_root=root)
+        run(cfg, lambda c, e: _Stateful(c, e, crash_pid=6), results_root=root)
     old = _only_dir(root)
     cp = read_checkpoint(old)
     assert cp["last_completed_project"] == 5 and cp["bidder_state"] == {"n_bids": 30}
     holder = {}
 
     def factory(c, e):
-        holder["b"] = Stateful(c, e)
+        holder["b"] = _Stateful(c, e, seen=seen)
         return holder["b"]
 
     new = run(cfg, factory, resume_dir=old)
@@ -610,18 +685,80 @@ def test_resume_restores_bidder_state(tmp_path):
     assert read_checkpoint(new)["bidder_state"] == {"n_bids": 60}
 
 
-def test_resume_rejects_other_run(tmp_path):
+class _OnlyGet(_RawBidder):
+    def get_state(self):
+        return {}
+
+
+class _OnlySet(_RawBidder):
+    def set_state(self, state):
+        pass
+
+
+def test_state_hook_must_be_paired(tmp_path):
+    cfg = RunConfig(condition="cover", seed=1, T=3)
+    for cls in (_OnlyGet, _OnlySet):
+        with pytest.raises(TypeError, match="get_state/set_state"):
+            run(cfg, cls, results_root=tmp_path / "runs")
+        with pytest.raises(TypeError):
+            run_in_memory(cfg, cls)
+    assert not (tmp_path / "runs").exists() or not any((tmp_path / "runs").iterdir())
+
+
+def test_resume_stateful_bidder_needs_bidder_state(tmp_path):
+    cfg = RunConfig(condition="cover", seed=1, T=10)
+    root = tmp_path / "runs"
+    with pytest.raises(RuntimeError):
+        run(cfg, _crash_factory(5, "first_bid"), results_root=root)  # stateless: no bidder_state
+    old = _only_dir(root)
+    assert "bidder_state" not in read_checkpoint(old)
+    before = _snapshot(old)
+    with pytest.raises(ValueError, match="bidder_state"):
+        run(cfg, _Stateful, resume_dir=old)
+    assert [p for p in root.iterdir() if p.is_dir()] == [old]
+    assert _snapshot(old) == before
+
+
+@pytest.mark.parametrize("other", [
+    RunConfig(condition="control", seed=1, T=10),
+    RunConfig(condition="cover", seed=2, T=10),
+    RunConfig(condition="cover", seed=1, T=20),
+    RunConfig(condition="cover", seed=1, T=10, cartel_seats=(0, 1)),
+    RunConfig(condition="cover", seed=1, T=10, N=5),
+    RunConfig(condition="cover", seed=1, T=10, bidder="llm"),
+    RunConfig(condition="cover", seed=1, T=10, model="claude-other"),
+    RunConfig(condition="cover", seed=1, T=10, cost=CostParams(0.90, 0.08, 0.17, 0.10)),
+    RunConfig(condition="cover", seed=1, T=10, cost=CostParams(0.91, 0.08, 0.17, 0.05)),
+    RunConfig(condition="cover", seed=1, T=10, scripted_margin=0.15),
+    RunConfig(condition="cover", seed=1, T=10, scripted_rule="shadow"),
+    RunConfig(condition="cover", seed=1, T=10, serious_add=0.05),
+], ids=["condition", "seed", "T", "seats", "N", "bidder", "model", "sigma_eps", "beta0",
+        "margin", "rule", "serious_add"])
+def test_resume_rejects_other_run(tmp_path, other):
     root = tmp_path / "runs"
     with pytest.raises(RuntimeError):
         run(RunConfig(condition="cover", seed=1, T=10), _crash_factory(5, "first_bid"), results_root=root)
     old = _only_dir(root)
     before = _snapshot(old)
-    for other in (RunConfig(condition="control", seed=1, T=10), RunConfig(condition="cover", seed=2, T=10),
-                  RunConfig(condition="cover", seed=1, T=20)):
-        with pytest.raises(ValueError):
-            run(other, synthetic_bidder_factory, resume_dir=old)
-    assert [p for p in root.iterdir() if p.is_dir()] == [old]
+    with pytest.raises(ValueError, match="cannot resume"):
+        run(other, synthetic_bidder_factory, resume_dir=old)
+    assert [p for p in root.iterdir() if p.is_dir()] == [old]  # nothing created
     assert _snapshot(old) == before
+
+
+def test_resume_rejects_meta_without_scripted(tmp_path):
+    """A run_meta written before the ``scripted`` key existed cannot be verified, so it is refused."""
+    cfg = RunConfig(condition="cover", seed=1, T=10)
+    root = tmp_path / "runs"
+    with pytest.raises(RuntimeError):
+        run(cfg, _crash_factory(5, "first_bid"), results_root=root)
+    old = _only_dir(root)
+    meta = read_run_meta(old)
+    del meta["scripted"]
+    io.write_run_meta(old, meta)
+    with pytest.raises(ValueError, match="scripted"):
+        run(cfg, synthetic_bidder_factory, resume_dir=old)
+    assert [p for p in root.iterdir() if p.is_dir()] == [old]
 
 
 def test_channel_delivery_of_synthetic_message():

@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import csv
 import math
-import shutil
+import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -85,6 +85,8 @@ def make_run_meta(cfg: RunConfig, env: Environment, limits: dict | None = None,
         "api_key_slot": cfg.api_key_slot,
         "frozen_from": frozen_from,
         "limits": limits,
+        "scripted": {"margin": cfg.scripted_margin, "rule": cfg.scripted_rule,
+                     "serious_add": cfg.serious_add},
         "started_utc": _utc_now().isoformat(),
         "finished_utc": None,
         "git_commit": _git_commit(),
@@ -110,6 +112,14 @@ def _finite(x) -> float | None:
     return f if math.isfinite(f) else None
 
 
+def _check_state_hook(bidder: Bidder) -> None:
+    """The optional bidder state hook is all-or-nothing: ``get_state`` and ``set_state`` together."""
+    has_get = callable(getattr(bidder, "get_state", None))
+    has_set = callable(getattr(bidder, "set_state", None))
+    if has_get != has_set:
+        raise TypeError(f"{type(bidder).__name__} defines only one of get_state/set_state; define both or neither")
+
+
 def _call_rows(run_id: str, project_id: int, firm_id: str, phase: str, records: list[dict]) -> list[dict]:
     rows = []
     for rec in records or []:
@@ -125,6 +135,7 @@ class _Loop:
     """One run's project loop. With ``run_dir=None`` nothing is written (``run_in_memory``)."""
 
     def __init__(self, cfg: RunConfig, env: Environment, bidder: Bidder, run_dir: Path | None):
+        _check_state_hook(bidder)
         self.cfg, self.env, self.bidder, self.run_dir = cfg, env, bidder, run_dir
         self.run_id = f"{cfg.condition}_s{cfg.seed}"
         self.ledger = AwardLedger(env.K, cfg.N)
@@ -142,10 +153,13 @@ class _Loop:
         won = np.asarray(checkpoint["won"], dtype=float)
         if won.shape != (self.cfg.N,) or len(checkpoint["history"]) != last or not 0 <= last <= self.cfg.T:
             raise ValueError(f"checkpoint inconsistent with this run (last_completed_project {last})")
+        stateful = hasattr(self.bidder, "set_state")
+        if stateful and "bidder_state" not in checkpoint:
+            raise ValueError("bidder has set_state but the checkpoint holds no bidder_state")
         self.ledger.won = won.copy()
         self.history = list(checkpoint["history"])
         self.messages = list(checkpoint["messages"])
-        if "bidder_state" in checkpoint and hasattr(self.bidder, "set_state"):
+        if stateful:
             self.bidder.set_state(checkpoint["bidder_state"])
         self.start = last
 
@@ -377,32 +391,84 @@ def _copy_rows_upto(src: Path, dst: Path, columns, last: int) -> None:
         w.writerows(keep)
 
 
-def _start_resume(cfg: RunConfig, env: Environment, old_dir: Path, root: Path,
-                  limits: dict | None, frozen_from: str | None) -> tuple[Path, dict, dict]:
-    """A NEW run dir seeded from ``old_dir`` up to its checkpoint. ``old_dir`` is only read."""
-    old_meta = io.read_run_meta(old_dir)
-    for key in ("condition", "seed", "T"):
-        if old_meta.get(key) != getattr(cfg, key):
-            raise ValueError(f"cannot resume {old_dir.name}: {key} is {old_meta.get(key)!r}, "
-                             f"config has {getattr(cfg, key)!r}")
-    seats = resolve_cartel_seats(cfg)
-    if old_meta.get("cartel_seats") != ([] if seats is None else list(seats)):
-        raise ValueError(f"cannot resume {old_dir.name}: cartel_seats differ")
-    cp = io.read_checkpoint(old_dir)
-    last = int(cp["last_completed_project"])
+_TRANSCRIPT_HEADER = re.compile(r"^## (?:Prompt|Response): Project (\d+) \(")
+_TRANSCRIPT_FENCES = ("``````", "````")  # prompt and response fences of io.append_transcript
 
+
+def _transcript_upto(text: str, last: int) -> str:
+    """The transcript entries of projects <= ``last``, byte for byte; header lines inside a fenced
+    prompt or response are content, not headers."""
+    out: list[str] = []
+    pending: list[str] = []  # blank lines between entries belong to the entry that follows
+    keep, fence = True, None
+    for line in text.splitlines(keepends=True):
+        bare = line.rstrip("\r\n")
+        if fence is None:
+            m = _TRANSCRIPT_HEADER.match(bare)
+            if m:
+                keep = int(m.group(1)) <= last
+            elif bare in _TRANSCRIPT_FENCES:
+                fence = bare
+            elif bare == "":
+                pending.append(line)
+                continue
+        elif bare == fence:
+            fence = None
+        if keep:
+            out += pending
+            out.append(line)
+        pending = []
+    if keep:
+        out += pending
+    return "".join(out)
+
+
+def _copy_transcripts_upto(src: Path, dst: Path, last: int) -> None:
+    if not src.is_dir():
+        return
+    dst.mkdir(parents=True, exist_ok=True)
+    for path in sorted(src.iterdir()):
+        if path.is_file():
+            with open(path, encoding="utf-8", newline="") as f:
+                kept = _transcript_upto(f.read(), last)
+            if kept:
+                with open(dst / path.name, "w", encoding="utf-8", newline="") as f:
+                    f.write(kept)
+
+
+def _check_resumable(cfg: RunConfig, old_meta: dict, name: str) -> None:
+    """Raise ValueError unless ``old_meta`` describes the same run as ``cfg``."""
+    seats = resolve_cartel_seats(cfg)
+    expected = {"condition": cfg.condition, "seed": cfg.seed, "T": cfg.T,
+                "cartel_seats": [] if seats is None else list(seats),
+                "bidder": cfg.bidder, "model": cfg.model,
+                "scripted": {"margin": cfg.scripted_margin, "rule": cfg.scripted_rule,
+                             "serious_add": cfg.serious_add}}
+    got = {k: old_meta.get(k) for k in expected}
+    got_cost = {k: (old_meta.get("cost") or {}).get(k) for k in ("beta0", "beta1", "beta2", "sigma_eps")}
+    expected["cost"] = {k: getattr(cfg.cost, k) for k in got_cost}
+    got["cost"] = got_cost
+    expected["N"], got["N"] = cfg.N, len(old_meta.get("seat_to_firm") or {})
+    diff = [k for k in expected if got[k] != expected[k]]
+    if diff:
+        detail = "; ".join(f"{k}: run has {got[k]!r}, config has {expected[k]!r}" for k in diff)
+        raise ValueError(f"cannot resume {name}: {detail}")
+
+
+def _start_resume(cfg: RunConfig, env: Environment, old_dir: Path, old_meta: dict, last: int, root: Path,
+                  limits: dict | None, frozen_from: str | None) -> tuple[Path, dict]:
+    """A NEW run dir seeded from ``old_dir`` up to project ``last``. ``old_dir`` is only read."""
     new_dir = io.new_run_dir(root, cfg.condition, cfg.seed)
     for name, cols in _RUN_CSVS:
         _copy_rows_upto(old_dir / name, new_dir / name, cols, last)
-    if (old_dir / "transcripts").is_dir():
-        shutil.copytree(old_dir / "transcripts", new_dir / "transcripts")
+    _copy_transcripts_upto(old_dir / "transcripts", new_dir / "transcripts", last)
     meta = make_run_meta(cfg, env, limits=old_meta.get("limits") if limits is None else limits,
                          frozen_from=old_meta.get("frozen_from") if frozen_from is None else frozen_from,
                          purpose=old_meta["purpose"])
     meta["started_utc"] = old_meta["started_utc"]
     meta["resumed_from"] = old_dir.name
     io.write_run_meta(new_dir, meta)
-    return new_dir, meta, cp
+    return new_dir, meta
 
 
 def run(cfg: RunConfig, bidder_factory: BidderFactory, results_root: str | Path | None = None,
@@ -413,23 +479,29 @@ def run(cfg: RunConfig, bidder_factory: BidderFactory, results_root: str | Path 
     ``resume_dir``: continue that run after its checkpoint in a NEW directory (under ``results_root``,
     default the old directory's parent) that starts with the old rows up to the checkpoint; the old
     directory is never modified. The resumed run keeps the old ``purpose`` and ``started_utc`` and
-    records ``resumed_from``; ``purpose`` is ignored."""
+    records ``resumed_from``; ``purpose`` is ignored. Every check (config against the old run_meta,
+    checkpoint, bidder state hook) runs before any directory is created."""
     if purpose not in io.RUN_PURPOSES:
         raise ValueError(f"purpose must be one of {io.RUN_PURPOSES}, got {purpose!r}")
-    env = generate_environment(cfg.seed, cfg.cost, cfg.T, cfg.N)
-    cp = None
+    cp = old_meta = None
     if resume_dir is not None:
         resume_dir = Path(resume_dir)
+        old_meta = io.read_run_meta(resume_dir)
+        _check_resumable(cfg, old_meta, resume_dir.name)
+        cp = io.read_checkpoint(resume_dir)
+    env = generate_environment(cfg.seed, cfg.cost, cfg.T, cfg.N)
+    loop = _Loop(cfg, env, bidder_factory(cfg, env), None)  # TypeError on a half state hook
+    if cp is not None:
+        loop.restore(cp)  # ValueError on an inconsistent checkpoint or missing bidder_state
         root = Path(results_root) if results_root is not None else resume_dir.parent
-        run_dir, meta, cp = _start_resume(cfg, env, resume_dir, root, limits, frozen_from)
+        run_dir, meta = _start_resume(cfg, env, resume_dir, old_meta, loop.start, root, limits, frozen_from)
     else:
         root = results_root if results_root is not None else _default_root(cfg, purpose)
         run_dir = io.new_run_dir(root, cfg.condition, cfg.seed)
         meta = make_run_meta(cfg, env, limits=limits, frozen_from=frozen_from, purpose=purpose)
         io.write_run_meta(run_dir, meta)
-    loop = _Loop(cfg, env, bidder_factory(cfg, env), run_dir)
+    loop.run_dir = run_dir
     if cp is not None:
-        loop.restore(cp)
         now = _utc_now()
         io.write_heartbeat(run_dir, loop.start, now, now)
         io.write_checkpoint(run_dir, loop.checkpoint_state(loop.start))  # the new dir is resumable at once

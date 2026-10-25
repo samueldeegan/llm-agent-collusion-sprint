@@ -13,6 +13,7 @@ from src.procurement.io import (BIDS_COLUMNS, CALLS_COLUMNS, MESSAGES_COLUMNS, T
 from src.procurement.runner import make_run_meta, resolve_cartel_seats, run, run_in_memory
 from src.procurement.synthetic import SyntheticBidder, simulate_table, synthetic_bidder_factory
 from src.procurement.types import BidResult
+from tests.conftest import api_guard
 
 COST = CostParams(0.90, 0.08, 0.17, 0.05)
 CFG = RunConfig(condition="control", seed=1)
@@ -20,13 +21,15 @@ RUN_FILES = ["bids.csv", "truth.csv", "messages.csv", "calls.csv", "run_meta.jso
              "heartbeat.json", "checkpoint.json"]
 META_KEYS = {"purpose", "condition", "scheme", "seed", "T", "burn_in", "cartel_seats", "seat_to_firm",
              "cost", "windows", "model", "max_tokens", "effort", "bidder", "concurrency",
-             "api_key_slot", "frozen_from", "limits", "started_utc", "finished_utc", "git_commit"}
+             "api_key_slot", "frozen_from", "limits", "started_utc", "finished_utc", "git_commit",
+             "scripted"}
 
 
 @pytest.fixture(scope="module")
 def control_run(tmp_path_factory):
     root = tmp_path_factory.mktemp("runs")
-    return run(CFG, synthetic_bidder_factory, results_root=root)
+    with api_guard():  # the function-scoped guard is not active in module fixtures
+        return run(CFG, synthetic_bidder_factory, results_root=root)
 
 
 def _header(path: Path) -> list[str]:
@@ -160,6 +163,7 @@ def test_run_meta_contents(control_run):
     assert meta["model"] == "claude-haiku-5-5" and meta["max_tokens"] == 8000
     assert meta["bidder"] == "synthetic" and meta["concurrency"] == 6 and meta["api_key_slot"] == 1
     assert meta["frozen_from"] is None and meta["limits"] is None
+    assert meta["scripted"] == {"margin": 0.10, "rule": "inflate", "serious_add": 0.0}
     assert meta["started_utc"] and meta["finished_utc"]
     assert meta["finished_utc"] >= meta["started_utc"]
     assert isinstance(meta["git_commit"], str) and meta["git_commit"]
