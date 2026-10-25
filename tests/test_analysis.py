@@ -14,8 +14,8 @@ import pandas as pd
 import pytest
 from scipy import stats
 
-from src.procurement import analysis, runner as runner_mod
-from src.procurement.analysis import (EMPIRICAL_NULL_COLUMNS, FLAG_RATES_COLUMNS, POWER_COLUMNS,
+from src.procurement import analysis, evaluation, runner as runner_mod
+from src.procurement.analysis import (CARTEL_MARGIN_COLUMNS, CARTEL_MARGIN_SUMMARY_COLUMNS, EMPIRICAL_NULL_COLUMNS, FLAG_RATES_COLUMNS, POWER_COLUMNS,
                                       ROBUSTNESS_COLUMNS, analyze, control_distribution_figure,
                                       control_thresholds, empirical_null_table, flag_rates, main,
                                       power_vs_T_table, robustness_table, stop_reason)
@@ -249,7 +249,7 @@ def test_readme(fx):
     assert (base / "results" / "README.md").read_text(encoding="utf-8") == text
     for heading in ("## Run inventory", "## Flag rates (tag spec)", "## Control distributions",
                     "## Mixed-pair A3 per scheme", "## Top-2 verdicts", "## Per-run results",
-                    "## Detection conditional on fidelity > 0.80", "## Power vs T", "## Robustness",
+                    "## Refusal", "## Seed-matched cartel-seat margins", "## Power vs T", "## Robustness",
                     "## Calibration", "## Not computed"):
         assert heading in text, heading
     for run_id in fx["dirs"]:
@@ -265,6 +265,89 @@ def test_readme(fx):
     mixed = _cell(fr, condition="cover", spec="tag", threshold="closed", pair_class="mixed", test="A3")
     assert f"{mixed.rate:.3f} [{mixed.ci_low:.3f}, {mixed.ci_high:.3f}]" in text
     assert "scripted_signatures.csv" in text and "cover_shadow" in text
+
+
+def test_readme_sections_round2_fixes(fx):
+    text = (fx["out"] / "README.md").read_text(encoding="utf-8")
+    assert "Detection conditional" not in text
+    for needle in ("cover-bid regressor (own cost vs partner bid)", "## Refusal",
+                   "## Seed-matched cartel-seat margins", "fidelity_honest_baseline",
+                   "b_own >> b_partner means the cover bid tracked own cost",
+                   "the metric does not distinguish cooperation from independent bidding"):
+        assert needle in text, needle
+    assert "| realized rule |" not in text
+    re_ = fx["run_eval"]
+    for _, r in re_[re_.condition != "control"].iterrows():
+        assert f"{r.fidelity_honest_baseline:.3f}" in text
+    for name in ("cartel_margins.csv", "cartel_margins_summary.csv"):
+        assert (fx["out"] / name).is_file()
+    cm = pd.read_csv(fx["out"] / "cartel_margins.csv")
+    assert list(cm.columns) == CARTEL_MARGIN_COLUMNS and set(cm.run_id) == {
+        "cover_s1", "cover_s2", "rotation_s1", "markup_s1"}
+    sm = pd.read_csv(fx["out"] / "cartel_margins_summary.csv")
+    assert list(sm.columns) == CARTEL_MARGIN_SUMMARY_COLUMNS and set(sm.scheme) == set(SCHEMES)
+    # the filter function stays, only the README section is gone
+    assert callable(evaluation.filter_by_fidelity)
+
+
+def _mini_run(seed, condition, names, cart_mult, out_mult, winners, burn_in=1, P=3):
+    """Hand-built record: cost 100, EST 100, six seats (0, 1 cartel); bid = mult x cost per seat group."""
+    seats = [0, 1] if condition != "control" else []
+    bids, truth = [], []
+    for pid in range(1, P + 1):
+        for i, f in enumerate(names):
+            mult = cart_mult[i] if i < 2 else out_mult
+            bids.append(dict(run_id=f"{condition}_s{seed}", project_id=pid, firm_id=f, est=100.0, tag="routine",
+                             dist=1.0, cap=0.0, firm_rate=0.0, bid=100.0 * mult, won=int(winners[pid - 1] == i)))
+            truth.append(dict(run_id=f"{condition}_s{seed}", project_id=pid, firm_id=f, seat=i, cost=100.0,
+                              eps=0.0, nu=0.0, is_cartel=int(i in seats), cartel_role="none"))
+    meta = dict(condition=condition, seed=seed, burn_in=burn_in, cartel_seats=seats,
+                seat_to_firm={str(i): f for i, f in enumerate(names)}, arm="base")
+    return dict(meta=meta, bids=pd.DataFrame(bids), truth=pd.DataFrame(truth))
+
+
+def test_cartel_margin_table():
+    n1 = ["A", "B", "C", "D", "E", "F"]
+    n2 = ["B", "A", "C", "D", "E", "F"]  # the control run seats are named differently
+    loaded = {
+        # scheme: seat 0 margin .2, seat 1 margin .4 -> pooled median .3; outsiders .1; seat wins 2 (projects 1, 3)
+        "cover_s1": _mini_run(1, "cover", n1, (1.2, 1.4), 1.1, [0, 3, 1]),
+        # control: seats at .1 -> median .1; wins: seat 1 wins project 2 only
+        "control_s1": _mini_run(1, "control", n2, (1.1, 1.1), 1.1, [2, 1, 3]),
+        # a second pair with a LOWER scheme margin (.05 vs .1)
+        "markup_s2": _mini_run(2, "markup", n1, (1.05, 1.05), 1.1, [2, 2, 2]),
+        "control_s2": _mini_run(2, "control", n1, (1.1, 1.1), 1.1, [0, 0, 0]),
+        # a scheme run with no control run of its seed
+        "rotation_s9": _mini_run(9, "rotation", n1, (1.1, 1.1), 1.1, [0, 0, 0]),
+    }
+    t = analysis.cartel_margin_table(loaded)
+    assert list(t.columns) == CARTEL_MARGIN_COLUMNS
+    assert list(t.run_id) == ["cover_s1", "rotation_s9", "markup_s2"]  # condition order, then seed
+    c = t.set_index("run_id")
+    r = c.loc["cover_s1"]
+    assert r.scheme == "cover" and r.seed == 1
+    assert r.cartel_margin_scheme == pytest.approx(0.3) and r.cartel_margin_control == pytest.approx(0.1)
+    assert r.outsider_margin_scheme == pytest.approx(0.1)
+    assert r.cartel_wins_scheme == 2 and r.cartel_wins_control == 1  # control seats = names B (seat 0), A (seat 1)
+    # profit: scheme seats win projects 1 (seat 0, +20) and 3 (seat 1, +40); control: project 2 (seat 1, +10)
+    assert r.cartel_profit_scheme == pytest.approx(60.0) and r.cartel_profit_control == pytest.approx(10.0)
+    assert math.isnan(c.loc["rotation_s9"].cartel_margin_control) and c.loc["rotation_s9"].cartel_margin_scheme == pytest.approx(0.1)
+    s = analysis.cartel_margin_summary(t)
+    assert list(s.columns) == CARTEL_MARGIN_SUMMARY_COLUMNS
+    cover = s.set_index("scheme").loc["cover"]
+    assert (cover.n_runs, cover.n_margin_up, cover.n_margin_down) == (1, 1, 0)
+    mk = s.set_index("scheme").loc["markup"]
+    assert (mk.n_runs, mk.n_margin_up, mk.n_margin_down) == (1, 0, 1)
+    assert 0 < cover.wilcoxon_p <= 1
+    # all differences zero -> no p
+    z = t.copy()
+    z["cartel_margin_control"] = z["cartel_margin_scheme"]
+    assert analysis.cartel_margin_summary(z)["wilcoxon_p"].isna().all()
+    # the Wilcoxon p is scipy's on the paired differences
+    big = pd.DataFrame({"run_id": list("abcdef"), "scheme": "cover", "seed": range(6),
+                        "cartel_margin_scheme": [0.3, 0.25, 0.4, 0.31, 0.2, 0.5], "cartel_margin_control": 0.1})
+    assert analysis.cartel_margin_summary(big).wilcoxon_p.iloc[0] == pytest.approx(
+        stats.wilcoxon(big.cartel_margin_scheme - 0.1).pvalue)
 
 
 def _none(tmp_path) -> list[str]:
@@ -481,7 +564,7 @@ def test_analysis_reads_allowed_files_only(fx, tmp_path):
     reads = {p.resolve() for p, reading in opened if reading and p.resolve().is_relative_to(base)}
     allowed = {"pair_stats.csv", "truth.csv", "bids.csv", "run_meta.json", "pair_eval.csv", "run_eval.csv",
                "excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "STOP",
-               "run_plan.json", "frozen.json"}
+               "run_plan.json", "frozen.json", "messages.csv"}  # messages.csv: refusal columns (spec 2.7)
     assert {p.name for p in reads} <= allowed, {p.name for p in reads} - allowed
     assert not any("transcripts" in p.parts for p in reads)
     for name in ("excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "bids.csv",

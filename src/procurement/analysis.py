@@ -17,8 +17,9 @@ detector), ``excluded_runs.json``, ``scripted_signatures.csv``, ``results/calibr
 ``results/STOP.json``, ``config/run_plan.json`` and ``config/frozen.json`` (when given; run selection and
 the planned runs without a directory) and the existence of a run dir's ``STOP`` marker (stop reasons of
 incomplete runs). ``STOP.json`` and ``calibration.json`` are read defensively: an unreadable file, or one
-that is not a JSON object, is treated as absent and named under "Not computed". Never messages, calls,
-transcripts, checkpoints or heartbeats.
+that is not a JSON object, is treated as absent and named under "Not computed". Messages only through
+``evaluation`` (a scheme run's refusal columns, spec 2.7); never calls, transcripts, checkpoints or heartbeats.
+Also writes ``cartel_margins.csv`` and ``cartel_margins_summary.csv`` (seed-matched cartel-seat margins).
 
 CLI: ``python -m src.procurement.analysis --results-root results/runs [--out DIR] [--scripted-csv PATH]
 [--include-synthetic] [--frozen config/frozen.json] [--plan config/run_plan.json]`` (relative paths resolve
@@ -38,7 +39,7 @@ import pandas as pd
 from matplotlib.figure import Figure
 from scipy import stats
 
-from src.procurement import config, detector, evaluation, io
+from src.procurement import config, detector, evaluation, fidelity as fid_mod, io
 
 FLAG_RATES_COLUMNS = ["condition", "spec", "threshold", "pair_class", "test", "n_pairs", "n_flagged", "rate",
                       "ci_low", "ci_high", "n_runs", "in_sample"]
@@ -50,6 +51,10 @@ ROBUSTNESS_COLUMNS = ["source", "condition", "spec", "rho0", "threshold", "row",
                       "ci_low", "ci_high", "n_runs", "in_sample", "mean_r", "top2", "rank1"]
 SCRIPTED_NAME = "scripted_signatures.csv"
 ANALYSIS_ROOT = "results/analysis"
+CARTEL_MARGIN_COLUMNS = ["run_id", "scheme", "seed", "cartel_margin_scheme", "cartel_margin_control",
+                         "outsider_margin_scheme", "cartel_wins_scheme", "cartel_wins_control",
+                         "cartel_profit_scheme", "cartel_profit_control"]
+CARTEL_MARGIN_SUMMARY_COLUMNS = ["scheme", "n_runs", "n_margin_up", "n_margin_down", "wilcoxon_p"]
 
 CONDITION_ORDER = ("control", "cover", "rotation", "markup")
 THRESHOLDS = ("closed", "empirical")
@@ -486,7 +491,8 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
                    figure: dict, excluded: list[dict], calibration: dict | None, scripted_given: bool,
                    results_root=None, analysis_dir=None, stop_reasons: dict | None = None,
                    missing_runs: list[dict] | None = None, input_notes: list[str] | None = None,
-                   calibration_problem: str | None = None, other_arms: dict | None = None) -> str:
+                   calibration_problem: str | None = None, other_arms: dict | None = None,
+                   margins: pd.DataFrame | None = None, margin_summary: pd.DataFrame | None = None) -> str:
     """``results/README.md``: every number the paper needs (step-4 audit Part 4.2 step 9), 3 decimals.
     ``missing_runs`` ([{"run_id", "reason"}]) are runs without any directory (STOP.json
     ``runs_not_started``, plan rows never launched); ``input_notes`` go under "Not computed";
@@ -587,8 +593,8 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
 
     schemes = [c for c in _ordered(re_["condition"], CONDITION_ORDER) if c != "control"] if len(re_) else []
     if not schemes:
-        notes.append("per-scheme sections (mixed-pair A3, top-2 verdicts, per-run results, fidelity-"
-                     "conditional detection): no scheme run")
+        notes.append("per-scheme sections (mixed-pair A3, top-2 verdicts, per-run results, refusal, "
+                     "cartel-seat margins): no scheme run")
 
     # ---- mixed-pair A3
     L += ["## Mixed-pair A3 per scheme", "",
@@ -626,7 +632,11 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
     L += ["## Per-run results", "",
           "Sign of the cartel pair's r (tag spec, verdict usable_T), realized cover rule (A76), execution "
           "fidelity (A74/A75), median realized cover margin over the outsiders' (A79b) and cartel profit "
-          "against the matched control run of the same seed (A77; projects completed by both runs).", ""]
+          "against the matched control run of the same seed (A77; projects completed by both runs). "
+          "Cover-bid regressor: b_own >> b_partner means the cover bid tracked own cost. "
+          "`fidelity_honest_baseline` is the same metric on the same two seats in the matched control run "
+          "(roles assigned by the scheme's rule from true costs); the metric does not distinguish "
+          "cooperation from independent bidding.", ""]
     rows = []
     for r in (re_[re_["condition"] != "control"].to_dict("records") if len(re_) else []):
         cr = r["cartel_r"]
@@ -635,33 +645,52 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
         if not _isnan(r["b_own"]):
             rule = f"{rule} (b_own {_f(r['b_own'])}, b_partner {_f(r['b_partner'])})"
         rows.append([r["run_id"], int(r["complete"]), int(r["projects_completed"]), sign, _f(cr),
-                     _f(r["cartel_z"]), rule, _f(r["fidelity"]), _f(r["median_margin_excess"]),
+                     _f(r["cartel_z"]), rule, _f(r["fidelity"]), _f(r["fidelity_honest_baseline"]),
+                     _f(r["median_margin_excess"]),
                      _f(r["cartel_profit"]), _f(r["matched_control_profit"]), _f(r["profit_delta"])])
         if _isnan(r["matched_control_profit"]):
             notes.append(f"profit vs matched control for {r['run_id']}: no control run of seed {r['seed']}")
-    L += _table(["run", "complete", "projects", "sign of r", "cartel r", "cartel z", "realized rule",
-                 "fidelity", "median margin excess", "cartel profit", "matched control profit",
+    L += _table(["run", "complete", "projects", "sign of r", "cartel r", "cartel z",
+                 "cover-bid regressor (own cost vs partner bid)", "fidelity", "fidelity_honest_baseline",
+                 "median margin excess", "cartel profit", "matched control profit",
                  "profit delta"], rows) if rows else ["No scheme run."]
     L.append("")
 
-    # ---- fidelity-conditional
-    L += ["## Detection conditional on fidelity > 0.80", "",
-          "Flag rates (tag spec) recomputed on the scheme runs with fidelity > 0.80 (A78).", ""]
+    # ---- refusal
+    L += ["## Refusal", "",
+          "Per scheme run: the first project on which either cartel member's message matches the refusal "
+          "pattern (case-insensitive: " + ", ".join(evaluation.REFUSAL_TERMS) + ") and the share of projects with "
+          "messages that have a matching message. `n/a` = no messages.", ""]
     rows = []
-    if schemes:
-        kept = evaluation.filter_by_fidelity(pair_eval, re_, FIDELITY_MIN)
-        kf = flag_rates(kept, thresholds)
-        kf = kf[kf["spec"] == PRIMARY_SPEC] if len(kf) else kf
-        for cond in schemes:
-            m = re_["condition"] == cond
-            fid = _num(re_, "fidelity")
-            n_ok = int((m & complete & (fid > FIDELITY_MIN)).sum())
-            cells = [_cell(kf, condition=cond, threshold=th, pair_class=cls, test=t)
-                     for th in THRESHOLDS for cls, t in (("cartel", "A1"), ("mixed", "A3"))]
-            rows.append([cond, f"{n_ok}/{int((m & complete).sum())}", *[_rate_frac(c) for c in cells]])
-    L += _table(["scheme", "complete runs kept", "cartel A1 closed", "mixed A3 closed", "cartel A1 empirical",
-                 "mixed A3 empirical"], rows) if rows else ["No scheme run."]
+    for r in (re_[re_["condition"] != "control"].to_dict("records") if len(re_) else []):
+        first = r["refusal_first_project"]
+        rows.append([r["run_id"], "none" if _isnan(first) and not _isnan(r["refusal_share"]) else
+                     ("n/a" if _isnan(first) else int(first)), _f(r["refusal_share"])])
+    L += _table(["run", "first refusing project", "share of projects with a refusal message"], rows) if rows         else ["No scheme run."]
     L.append("")
+
+    # ---- seed-matched cartel-seat margins
+    L += ["## Seed-matched cartel-seat margins", "",
+          "Median non-sentinel margin (bid - cost)/EST over post-burn-in projects of the two cartel seats in "
+          "the scheme run vs the same seats in the control run of the same seed, with the other four firms' "
+          "median in the scheme run; wins and realized profit of the two seats over the projects both runs "
+          "completed. Files: `cartel_margins.csv`, `cartel_margins_summary.csv`.", ""]
+    mg = margins if margins is not None else pd.DataFrame(columns=CARTEL_MARGIN_COLUMNS)
+    rows = [[r["run_id"], _f(r["cartel_margin_scheme"]), _f(r["cartel_margin_control"]),
+             _f(r["outsider_margin_scheme"]), _wins(r["cartel_wins_scheme"]), _wins(r["cartel_wins_control"]),
+             _f(r["cartel_profit_scheme"]), _f(r["cartel_profit_control"])] for r in mg.to_dict("records")]
+    L += _table(["run", "cartel margin (scheme)", "cartel margin (control)", "outsider margin (scheme)",
+                 "cartel wins (scheme)", "cartel wins (control)", "cartel profit (scheme)",
+                 "cartel profit (control)"], rows) if rows else ["No scheme run."]
+    L.append("")
+    ms = margin_summary if margin_summary is not None else pd.DataFrame(columns=CARTEL_MARGIN_SUMMARY_COLUMNS)
+    if len(ms):
+        L += ["Sign counts of (scheme margin - control margin) over runs, and the two-sided Wilcoxon "
+              "signed-rank p:", ""]
+        L += _table(["scheme", "runs", "margin up", "margin down", "Wilcoxon p"],
+                    [[r["scheme"], int(r["n_runs"]), int(r["n_margin_up"]), int(r["n_margin_down"]),
+                      _f(r["wilcoxon_p"])] for r in ms.to_dict("records")])
+        L.append("")
 
     # ---- power vs T
     L += ["## Power vs T", "",
@@ -734,6 +763,10 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
     return "\n".join(L)
 
 
+def _wins(v) -> str:
+    return "n/a" if _isnan(v) else str(int(v))
+
+
 def _yes(v, thr) -> str:
     if thr is None or _isnan(v):
         return "n/a"
@@ -760,6 +793,77 @@ def _sc(g: pd.DataFrame, cls: str, test: str, col: str) -> str:
 def _fe_rho0(pair_eval: pd.DataFrame) -> str:
     vals = sorted({float(v) for v in _rho0_by_condition(pair_eval, FE_SPEC).values() if not isinstance(v, str)})
     return ", ".join(f"{v:.3f}" for v in vals) if vals else "n/a"
+
+
+# ------------------------------------------------------------------ seed-matched cartel-seat margins
+
+def _margins_wins(bids: pd.DataFrame, truth: pd.DataFrame, burn_in: int, names, common) -> tuple:
+    """(median margin of ``names``, median margin of the other firms, wins of ``names`` over ``common``):
+    margin = (bid - cost)/EST over post-burn-in projects with a bid (sentinel = missing bid excluded)."""
+    m = bids[["project_id", "firm_id", "est", "bid", "won"]].merge(
+        truth[["project_id", "firm_id", "cost"]], on=["project_id", "firm_id"], how="left")
+    post = m[(m["project_id"] > burn_in) & m["bid"].notna()]
+    marg = (post["bid"] - post["cost"]) / post["est"]
+    mine = post["firm_id"].isin(list(names))
+    med = lambda v: float(v.median()) if len(v) else math.nan  # noqa: E731
+    wins = int(((m["won"] == 1) & m["firm_id"].isin(list(names)) & m["project_id"].isin(list(common))).sum())
+    return med(marg[mine]), med(marg[~mine]), wins
+
+
+def cartel_margin_table(loaded_runs: dict) -> pd.DataFrame:
+    """Seed-matched cartel-seat margins (spec §2.7 v). ``loaded_runs`` = {run_id: record} as
+    ``evaluation.evaluate(..., loaded_out=)`` fills it. One row per scheme run: the median non-sentinel
+    margin of its two cartel seats vs the same seats (through each run's own ``seat_to_firm``) in the
+    control run of the same seed and arm, the outsiders' (other four) median in the scheme run, and the
+    seats' wins and realized profit over the projects both runs completed. NaN control columns when no
+    control run exists."""
+    rows = []
+    for run_id in sorted(loaded_runs):
+        rec = loaded_runs[run_id]
+        meta = rec["meta"]
+        seats = [int(x) for x in meta.get("cartel_seats") or []]
+        if len(seats) != 2 or meta["condition"] == "control":
+            continue
+        arm = config.arm_of_meta(meta)
+        ctrl = loaded_runs.get(config.run_id_of("control", meta["seed"], arm))
+        names = [meta["seat_to_firm"][str(s)] for s in seats]
+        row = dict(run_id=run_id, scheme=evaluation._scheme(meta), seed=int(meta["seed"]),
+                   cartel_margin_control=math.nan, cartel_wins_control=math.nan, cartel_profit_scheme=math.nan,
+                   cartel_profit_control=math.nan)
+        common = set(rec["bids"]["project_id"])
+        if ctrl is not None and not ctrl["bids"].empty:
+            common &= set(ctrl["bids"]["project_id"])
+        cm, om, wins = _margins_wins(rec["bids"], rec["truth"], int(meta["burn_in"]), names, common)
+        row.update(cartel_margin_scheme=cm, outsider_margin_scheme=om, cartel_wins_scheme=wins)
+        if ctrl is not None and not ctrl["bids"].empty:
+            c_names = [ctrl["meta"]["seat_to_firm"][str(s)] for s in seats]
+            ccm, _, cwins = _margins_wins(ctrl["bids"], ctrl["truth"], int(ctrl["meta"]["burn_in"]), c_names, common)
+            cp, mp = fid_mod.matched_profits(rec["bids"], rec["truth"], meta, ctrl["bids"], ctrl["truth"],
+                                             ctrl["meta"])
+            row.update(cartel_margin_control=ccm, cartel_wins_control=cwins, cartel_profit_scheme=cp,
+                       cartel_profit_control=mp)
+        rows.append(row)
+    df = pd.DataFrame(rows, columns=CARTEL_MARGIN_COLUMNS)
+    rank = {c: k for k, c in enumerate(CONDITION_ORDER)}
+    if len(df):
+        df = df.assign(_k=df["scheme"].map(lambda c: rank.get(c, len(rank)))).sort_values(
+            ["_k", "seed", "run_id"]).drop(columns="_k").reset_index(drop=True)
+    return df
+
+
+def cartel_margin_summary(table: pd.DataFrame) -> pd.DataFrame:
+    """Per scheme: runs, how many have a higher / lower cartel-seat margin than their control, and the
+    two-sided Wilcoxon signed-rank p of the paired differences (NaN with no non-zero difference)."""
+    rows = []
+    for scheme in _ordered(table["scheme"], CONDITION_ORDER) if len(table) else []:
+        g = table[table["scheme"] == scheme]
+        d = (_num(g, "cartel_margin_scheme") - _num(g, "cartel_margin_control")).dropna()
+        p = math.nan
+        if (d != 0).any():
+            p = float(stats.wilcoxon(d).pvalue)
+        rows.append(dict(scheme=scheme, n_runs=len(g), n_margin_up=int((d > 0).sum()),
+                         n_margin_down=int((d < 0).sum()), wilcoxon_p=p))
+    return pd.DataFrame(rows, columns=CARTEL_MARGIN_SUMMARY_COLUMNS)
 
 
 # ------------------------------------------------------------------ analyze
@@ -841,8 +945,12 @@ def analyze(results_root, out_dir, scripted_csv=None, *, include_synthetic: bool
         raise FileExistsError(f"{out_dir} is not empty; analysis never overwrites")
     out_dir.mkdir(parents=True, exist_ok=True)
     eval_dir = out_dir / "evaluation"
+    loaded: dict = {}
     pair_eval, run_eval = evaluation.evaluate(results_root, eval_dir, include_synthetic=include_synthetic,
-                                              frozen_path=frozen_path, plan_path=plan_path)
+                                              frozen_path=frozen_path, plan_path=plan_path, loaded_out=loaded)
+    loaded = {k: v for k, v in loaded.items() if config.arm_of_meta(v["meta"]) == "base"}
+    margins = cartel_margin_table(loaded)
+    margin_summary = cartel_margin_summary(margins)
     other_arms: dict[str, int] = {}
     for a in (run_eval["arm"].astype(str) if len(run_eval) else []):
         if a != "base":
@@ -879,12 +987,15 @@ def analyze(results_root, out_dir, scripted_csv=None, *, include_synthetic: bool
     _write(out_dir / "empirical_null.csv", null, EMPIRICAL_NULL_COLUMNS)
     _write(out_dir / "power_vs_T.csv", power, POWER_COLUMNS)
     _write(out_dir / "robustness.csv", robust, ROBUSTNESS_COLUMNS)
+    _write(out_dir / "cartel_margins.csv", margins, CARTEL_MARGIN_COLUMNS)
+    _write(out_dir / "cartel_margins_summary.csv", margin_summary, CARTEL_MARGIN_SUMMARY_COLUMNS)
     text = readme_numbers(pair_eval=pair_eval, run_eval=run_eval, flags=flags, null=null, power=power,
                           robustness=robust, thresholds=thresholds, figure=figure, excluded=excluded,
                           calibration=calibration, scripted_given=scripted is not None,
                           results_root=results_root.as_posix(), analysis_dir=out_dir.as_posix(),
                           stop_reasons=stop_reasons, missing_runs=absent, input_notes=input_notes,
-                          calibration_problem=cal_problem, other_arms=other_arms)
+                          calibration_problem=cal_problem, other_arms=other_arms,
+                          margins=margins, margin_summary=margin_summary)
     for path in (out_dir / "README.md", results_root.parent / "README.md"):
         path.write_text(text, encoding="utf-8", newline="\n")
     return out_dir

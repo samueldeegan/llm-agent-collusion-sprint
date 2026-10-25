@@ -8,7 +8,7 @@ import pytest
 from src.procurement import io
 from src.procurement.config import CostParams
 from src.procurement.environment import generate_environment
-from src.procurement.fidelity import (cartel_profit, cover_fidelity, cover_margins, fidelity,
+from src.procurement.fidelity import (cartel_profit, cover_fidelity, cover_margins, fidelity, honest_baseline,
                                       markup_fidelity, profit_delta, project_executed_flags,
                                       realized_rule, rotation_fidelity)
 from src.procurement.synthetic import simulate_table
@@ -109,6 +109,33 @@ def test_rotation_fidelity():
     assert rotation_fidelity(b, t, PAIR) == pytest.approx(109 / 110)
     # the cost rule would call every rotation project unexecuted
     assert cover_fidelity(*rotation_case(), PAIR) == 0.0
+
+
+def test_honest_baseline_cover():
+    # a control-like table: no cartel roles; the lower-cost seat always bids below the higher -> 1.0
+    b, t = cover_case()
+    t["cartel_role"] = "none"
+    t["is_cartel"] = 0
+    assert honest_baseline(b, t, PAIR, "cover") == 1.0
+    b0, t0 = cover_case(executed=[False] * 110)
+    t0["cartel_role"] = "none"
+    assert honest_baseline(b0, t0, PAIR, "cover") == 0.0
+    # roles in the truth table are ignored: the cost rule decides
+    b1, t1 = cover_case()
+    t1["cartel_role"] = t1["cartel_role"].map({"serious": "cover", "cover": "serious", "none": "none"})
+    assert honest_baseline(b1, t1, PAIR, "cover") == 1.0
+
+
+def test_honest_baseline_rotation_and_markup():
+    b, t = rotation_case()
+    t["cartel_role"] = "none"
+    assert honest_baseline(b, t, PAIR, "rotation") == 1.0  # parity: odd -> first seat serious
+    b2, t2 = rotation_case(executed=False)
+    assert honest_baseline(b2, t2, PAIR, "rotation") == 0.0
+    mb, mt = markup_case((0.15, 0.15))
+    assert honest_baseline(mb, mt, PAIR, "markup") == markup_fidelity(mb, mt, PAIR) == 1.0
+    with pytest.raises(ValueError):
+        honest_baseline(b, t, PAIR, "bogus")
 
 
 def markup_case(member_margins, outsider_margins=(0.04, 0.05, 0.06, 0.07), P=1):

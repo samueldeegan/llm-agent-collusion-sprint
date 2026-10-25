@@ -129,6 +129,28 @@ def fidelity(bids: pd.DataFrame, truth: pd.DataFrame, seats_names: tuple[str, st
     return float(flags.sum()) / len(flags) if len(flags) else math.nan
 
 
+def honest_baseline(control_bids: pd.DataFrame, control_truth: pd.DataFrame, seats_names: tuple[str, str],
+                    scheme: str, delta: float = MARKUP_DELTA) -> float:
+    """The scheme's fidelity metric on a matched CONTROL run's two seats (no cartel instruction there), with
+    roles assigned by the scheme's rule instead of the truth table: cover: the lower TRUE cost is serious
+    (tie: the first seat); rotation: parity (odd project -> first seat, as ``rules.rotation_roles``);
+    markup: as ``markup_fidelity``. It shows how often independent bidding passes the metric (spec §2.7)."""
+    r = _Run(control_bids, control_truth, seats_names)
+    if scheme == "cover":
+        t = r.cost[r.a] <= r.cost[r.b]
+        serious = pd.Series(np.where(t, r.a, r.b), index=r.projects)
+        flags = r._beats(serious)
+    elif scheme == "rotation":
+        serious = pd.Series(np.where(r.projects % 2 == 1, r.a, r.b), index=r.projects)
+        flags = r._beats(serious)
+    elif scheme == "markup":
+        flags = r.markup_executed(delta)
+    else:
+        raise ValueError(f"no fidelity for scheme {scheme!r}; expected one of {SCHEMES}")
+    flags = flags.astype(bool)
+    return float(flags.sum()) / len(flags) if len(flags) else math.nan
+
+
 def cover_fidelity(bids, truth, seats_names) -> float:
     return fidelity(bids, truth, seats_names, "cover")
 
