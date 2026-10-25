@@ -158,6 +158,106 @@ def test_smoke_exit_1_below_18(tmp_path, key, capsys):
     assert "17/18" in capsys.readouterr().out
 
 
+# ------------------------------------------------------------------ arm smoke
+
+def test_arm_smoke_mem0_passes(tmp_path, key, capsys):
+    mod = load_script("arm_smoke")
+    assert mod.main(["--arm", "mem0", "--results-dir", str(tmp_path)],
+                    bidder_factory=stub_factory(StubClient())) == 0
+    (d,) = _run_dirs(tmp_path)
+    meta = io.read_run_meta(d)
+    assert meta["arm"] == "mem0" and meta["windows"]["memory"] == 0 and meta["windows"]["scratchpad"] is False
+    assert meta["purpose"] == "smoke" and meta["T"] == 3 and meta["condition"] == "control"
+    s = _cal(tmp_path)["round2_smokes"]["mem0"]
+    assert s["parse_rate"] == 1.0 and s["parsed"] == 18 and s["prompt_checks"] == []
+    assert s["run_dir"] == str(d) and s["n_calls"] == 18
+    _no_secret(tmp_path, capsys.readouterr().out)
+
+
+def test_arm_smoke_merges_arms_and_sections(tmp_path, key):
+    (tmp_path / "calibration.json").write_text(json.dumps({"smoke": {"parsed": 18}, "round2_smokes": {
+        "other": {"parsed": 18}}}), encoding="utf-8")
+    mod = load_script("arm_smoke")
+    assert mod.main(["--arm", "stateless", "--results-dir", str(tmp_path)],
+                    bidder_factory=stub_factory(StubClient())) == 0
+    cal = _cal(tmp_path)
+    assert cal["smoke"] == {"parsed": 18} and cal["round2_smokes"]["other"] == {"parsed": 18}
+    assert cal["round2_smokes"]["stateless"]["prompt_checks"] == []
+
+
+def test_arm_smoke_reports_prompt_violation_and_exits_1(tmp_path, key, monkeypatch, capsys):
+    from src.procurement import prompt_sections
+    real = prompt_sections.expected_sections
+
+    def wrong(cfg, phase="bid", member=False, t=14):
+        system, user = real(cfg, phase, member, t)
+        return system, user + ["# Extra"]
+    monkeypatch.setattr(prompt_sections, "expected_sections", wrong)
+    mod = load_script("arm_smoke")
+    assert mod.main(["--arm", "mem0", "--results-dir", str(tmp_path)],
+                    bidder_factory=stub_factory(StubClient())) == 1
+    checks = _cal(tmp_path)["round2_smokes"]["mem0"]["prompt_checks"]
+    assert len(checks) == 1 and "user sections" in checks[0]
+    assert "PROMPT CHECK FAILED" in capsys.readouterr().out
+
+
+def test_arm_smoke_refuses_without_key(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY_2", raising=False)
+    mod = load_script("arm_smoke")
+    assert mod.main(["--arm", "mem0", "--results-dir", str(tmp_path)],
+                    bidder_factory=synthetic_bidder_factory) == 5
+    assert not _run_dirs(tmp_path) and not (tmp_path / "calibration.json").exists()
+
+
+def test_arm_smoke_fails_without_frozen_or_unknown_arm(tmp_path, key, capsys):
+    mod = load_script("arm_smoke")
+    assert mod.main(["--arm", "mem0", "--results-dir", str(tmp_path), "--frozen", str(tmp_path / "nope.json")],
+                    bidder_factory=synthetic_bidder_factory) == 1
+    assert mod.main(["--arm", "nonesuch", "--results-dir", str(tmp_path)],
+                    bidder_factory=synthetic_bidder_factory) == 1
+    assert not _run_dirs(tmp_path)
+
+
+def _hidden_cfg():
+    from src.procurement import config
+    d = config.load_defaults()
+    return config.run_config_from_defaults(d, condition="control", seed=1, T=3, burn_in=0, bidder="llm",
+                                           bidder_info="hidden", memory_window=10, scratchpad_enabled=True)
+
+
+def _hidden_prompt(cfg, extra_system=""):
+    from src.procurement.environment import generate_environment
+    from src.procurement.prompt_sections import expected_sections
+    env = generate_environment(cfg.seed, cfg.cost, cfg.T, cfg.N)
+    sys_h, user_h = expected_sections(cfg, "bid", t=1)
+    system = "\n".join(f"{h}\nx" for h in sys_h) + extra_system
+    user = ("\n".join(f"{h}\ny" for h in user_h)
+            + f"\nYour firm rate: {env.eta[0]:+.4f} (a share of EST; permanent)")
+    return f"[system]\n{system}\n\n[user]\n{user}"
+
+
+def test_hidden_prompt_checks_pass_on_clean_text():
+    from src.procurement.prompt_sections import check_prompt_text
+    cfg = _hidden_cfg()
+    assert check_prompt_text(_hidden_prompt(cfg), cfg) == []
+
+
+def test_hidden_prompt_checks_detect_violations():
+    from src.procurement.environment import generate_environment
+    from src.procurement.prompt_sections import check_prompt_text
+    cfg = _hidden_cfg()
+    bad = check_prompt_text(_hidden_prompt(cfg, "\nEvery firm's cost is built the same way"), cfg)
+    assert len(bad) == 1 and "built the same way" in bad[0]
+    env = generate_environment(cfg.seed, cfg.cost, cfg.T, cfg.N)
+    bad = check_prompt_text(_hidden_prompt(cfg, f"\nrival {env.eta[1]:+.4f}\nFirm rate"), cfg)
+    assert any("rival seat 1" in b for b in bad) and any("'Firm rate'" in b for b in bad)
+    bad = check_prompt_text(_hidden_prompt(cfg, f"\ncost = {cfg.cost.beta0!r} * EST"), cfg)
+    assert any("beta0" in b for b in bad)
+    bad = check_prompt_text(_hidden_prompt(cfg).split(chr(10) + "Your firm rate")[0], cfg)
+    assert any("own firm rate" in b for b in bad)
+
+
 # ------------------------------------------------------------------ cover smoke
 
 def test_cover_smoke_prefreeze_offline(tmp_path, key, capsys):
