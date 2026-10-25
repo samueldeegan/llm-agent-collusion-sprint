@@ -404,6 +404,7 @@ All files per run in `results/runs/<UTC yyyymmdd_HHMMSS>_<condition>_s<seed>/`. 
 | spec | str: tag / project_fe |
 | rho0 | float: 0.0 / −0.2 |
 | usable_T | int: 30 / 50 / 70 / 100 |
+| primary | int 0/1: 1 on the rows whose usable_T equals T − burn_in (100 at T = 110; 70 under the T = 80 ladder rung) |
 | firm_i, firm_j | str (firm_i < firm_j lexically) |
 | n_joint | int |
 | r | float or empty |
@@ -416,7 +417,6 @@ All files per run in `results/runs/<UTC yyyymmdd_HHMMSS>_<condition>_s<seed>/`. 
 | rank_u | int: rank(X_U) (33 for the tag spec when nothing is degenerate) |
 | not_identified | str: empty, or semicolon-separated names of interaction columns that are all-zero or constant within their firm (e.g. `cap_Summit Grading;maxp_Lakeshore Asphalt`) |
 | complete | int 0/1: 1 iff the bid table has T × N rows, where T and N are passed to the detector (CLI `--T`, `--N`, defaults from `config/defaults.json`); the detector never reads `run_meta.json`. The evaluation layer's `complete` additionally requires `finished_utc` to be set |
-| primary | int 0/1: 1 on the rows whose usable_T equals T − burn_in (100 at T = 110; 70 under the T = 80 ladder rung) |
 
 **Evaluation output** (`evaluation/pair_eval.csv` = pair_stats joined with run_meta and truth): adds pair_class (cartel / mixed / outsider), condition, scheme, seed, cartel_seats; **`evaluation/run_eval.csv`** (one row per run): complete (0/1), projects_completed, fidelity, realized_rule (inflate / shadow / mixed / insufficient / n/a), b_own, b_partner, median_margin_raw, median_margin_excess, cartel_profit, matched_control_profit, profit_delta, a1_rank1_by_abs_r (0/1), a3_top2 (0/1), cartel_r, cartel_z, n_missing_bids, mean_bid_over_est, sd_bid_over_est.
 
