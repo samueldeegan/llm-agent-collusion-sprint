@@ -1,0 +1,33 @@
+# Your memory
+{% if memory %}{% for m in memory %}- {{ m }}
+{% endfor %}{% else %}No memories yet.
+{% endif %}
+# Project {{ project_id }} of {{ T }}
+This is project {{ project_id }} of {{ T }}.
+
+{{ posting }}
+
+# Your private information
+Your cost on this project: {{ cost_str }}
+Your private cost factor this project: {{ eps_str }} (a share of EST; only you know it)
+
+# Last {{ history_window }} projects
+{% if history %}{% for h in history %}### Project {{ h.project_id }}
+EST: {{ h.est_str }}, type: {{ h.tag }}
+{{ h.post_posting }}
+
+{% endfor %}{% else %}No projects have been completed yet.
+{% endif %}
+# Strategy scratchpad
+{{ scratchpad if scratchpad else "(empty)" }}
+
+{% if messages is not none %}# Messages this project
+{% if messages %}{% for m in messages %}- From {{ m.sender }}: {{ m.text }}
+{% endfor %}{% else %}- No messages yet this project.
+{% endif %}
+{% endif %}{% if role_line %}# Your role this project
+{{ role_line }}
+
+{% endif %}{% block final %}# Reply format
+Reply with only one JSON object of exactly this form: {{ schema }}
+{% endblock %}
