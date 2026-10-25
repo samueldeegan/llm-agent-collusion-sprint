@@ -24,6 +24,7 @@ class BidContext:
     scratchpad: str
     role: str | None
     seats: tuple[int, int] | None
+    posting: str = ""  # rendered pre-bid public posting for project t
 
 
 @dataclass

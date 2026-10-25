@@ -4,11 +4,11 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.procurement.config import CostParams
-from src.procurement.environment import cost_of, generate_environment
+from src.procurement.config import CostParams, RunConfig
+from src.procurement.environment import Environment, cost_of, generate_environment
 from src.procurement.io import BIDS_COLUMNS, TRUTH_COLUMNS
 from src.procurement.rules import cover_inflate, cover_shadow, cover_roles, markup_bid, rotation_roles
-from src.procurement.types import BidContext, BidResult, MessageResult
+from src.procurement.types import BidContext, Bidder, BidResult, MessageResult
 
 HONEST_MARGIN = 1.05
 
@@ -75,6 +75,11 @@ class SyntheticBidder:
         intended = self._serious(ctx)
         return MessageResult(text=scheme_message_text(ctx.cost, intended), my_cost=ctx.cost,
                              intended_serious_bid=intended, reason="", raw=None, call_records=[])
+
+
+def synthetic_bidder_factory(cfg: RunConfig, env: Environment) -> Bidder:
+    """One SyntheticBidder serving all seats of a run (it routes by ``ctx.seat``)."""
+    return SyntheticBidder(cfg.seed, cfg.cost, cfg.T, cfg.N)
 
 
 def simulate_table(seed: int, cost: CostParams, T: int, scheme: str | None,
