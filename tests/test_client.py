@@ -684,3 +684,21 @@ def test_408_and_409_are_client_errors_not_retried(status):
     c, ft = _client(transport)
     resp, recs = c.create("S", "U")
     assert resp is None and len(recs) == 1 and ft.sleeps == [] and recs[0]["reason"] == f"http_{status}"
+
+
+def test_budget_from_defaults_json(monkeypatch):
+    """C3: the transport budget is config/defaults.json transport_budget_s, not a dead constant."""
+    from src.procurement import config
+    assert client_mod.BUDGET_SECONDS == config.load_defaults()["transport_budget_s"]
+    monkeypatch.setattr(config, "load_defaults", lambda *a, **k: {"transport_budget_s": 100})
+    assert client_mod.default_budget_s() == 100.0
+    ft = FakeTime()
+    start = ft.now
+
+    def transport(kwargs):
+        raise TransportError("server", 503, None, "down")
+
+    c, _ = _client(transport, ft, budget_s=client_mod.default_budget_s())
+    resp, recs = c.create("S", "U")
+    assert resp is None and recs[-1]["reason"] == "transport_failed"
+    assert ft.now - start <= 100 and c.budget_s == 100.0

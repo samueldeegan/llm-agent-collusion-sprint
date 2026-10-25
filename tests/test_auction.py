@@ -82,3 +82,22 @@ def test_posting_contents():
     assert "Winner" in post or "winner" in post
     none_post = render_post_posting(env.names, {i: None for i in range(6)}, None)
     assert "No winner" in none_post
+
+
+def test_posting_aligns_longest_firm_name():
+    """C2: the firm column is wide enough for the longest configured firm name, so every row's DIST
+    column starts at the same offset."""
+    import json
+    from pathlib import Path
+    names = json.loads((Path(__file__).resolve().parents[1] / "config" / "firms.json").read_text(encoding="utf-8"))
+    longest = max(names, key=len)
+    env = generate_environment(1, COST, 10)
+    text = render_pre_posting(env, 0, np.zeros(6), env.names)
+    rows = text.splitlines()[-7:]
+    header, body = rows[0], rows[1:]
+    assert header.index("DIST") > len(longest)
+    width = header.index("DIST (mi)") + len("DIST (mi)")
+    for line, name in zip(body, env.names):
+        assert line.startswith(name) and line[len(name):width].strip() != "" and line[len(name)] == " "
+        assert len(line) == len(header), line
+    assert longest in env.names

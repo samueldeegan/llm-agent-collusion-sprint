@@ -239,3 +239,19 @@ def test_bidder_cover_reads_partner_message_not_own():
     ctx, env = _ctx("cover", [own])  # only its own message: falls back to h + margin*E
     h = honest_bid(ctx.cost, est, bidder.noise[1, ctx.t])
     assert bidder.bid(ctx).bid == round(h + 0.10 * est, 2)
+
+
+def test_honest_margin_from_cost_params():
+    """C3: the synthetic bidder and the table simulator read cost.honest_margin (defaults.json)."""
+    from dataclasses import replace
+    from src.procurement.config import RunConfig
+    from src.procurement.runner import run_in_memory
+    from src.procurement.synthetic import synthetic_bidder_factory
+    base = CostParams(0.90, 0.08, 0.17, 0.05)
+    wide = replace(base, honest_margin=1.20)
+    b0, t0 = simulate_table(1, base, 20, None, None)
+    b1, t1 = simulate_table(1, wide, 20, None, None)
+    assert (t0["cost"] == t1["cost"]).all()
+    assert ((b1["bid"] - b0["bid"]) / t0["cost"]).round(6).between(0.149, 0.151).all()
+    bids, truth, _ = run_in_memory(RunConfig("control", 1, T=20, cost=wide), synthetic_bidder_factory)
+    assert bids["bid"].tolist() == b1["bid"].tolist()

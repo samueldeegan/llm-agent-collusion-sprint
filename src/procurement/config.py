@@ -99,7 +99,36 @@ def first_speaker(project_id: int, condition: str, seats: tuple[int, int]) -> in
     return seats[(project_id - 1) % 2]
 
 
-def run_plan(R: dict[str, int], include_rotation: bool = True, T: int = 110) -> list[RunConfig]:
+LADDER_T = 80  # time-ladder rung 2 caps T at this (audit Part 4.2)
+
+# RunConfig fields every run takes from config/defaults.json (besides ``cost`` and ``T``): the single
+# settings source of the launcher and the hand-run scripts
+DEFAULTS_RUN_FIELDS = ("N", "burn_in", "model", "max_tokens", "history_window", "memory_window",
+                       "max_message_length", "concurrency")
+
+
+def cost_from_defaults(defaults: dict) -> CostParams:
+    """``CostParams`` from ``defaults["cost"]`` (lists become tuples)."""
+    return CostParams(**{k: tuple(v) if isinstance(v, list) else v for k, v in defaults["cost"].items()})
+
+
+def run_config_from_defaults(defaults: dict, *, condition: str, seed: int, T: int | None = None,
+                             cost: CostParams | None = None, **overrides) -> RunConfig:
+    """The one way a run config is built from ``config/defaults.json``: N, burn_in, model, max_tokens,
+    the history and memory windows, the message cap and concurrency from ``defaults``; ``T`` (default
+    ``defaults["T"]``); cost from ``cost`` or ``defaults["cost"]``; then ``overrides`` (any RunConfig
+    field, e.g. a script's burn_in or bidder)."""
+    settings = {k: defaults[k] for k in DEFAULTS_RUN_FIELDS if k in defaults}
+    settings["T"] = int(T if T is not None else defaults.get("T", 110))
+    settings.update(overrides)
+    return RunConfig(condition=condition, seed=seed,
+                     cost=cost if cost is not None else cost_from_defaults(defaults), **settings)
+
+
+def run_plan(R: dict[str, int], include_rotation: bool = True, T: int = 110, *,
+             defaults: dict | None = None, cost: CostParams | None = None, **overrides) -> list[RunConfig]:
+    """One config per (condition, seed), seeds 1..R[condition]. With ``defaults`` every config is built by
+    ``run_config_from_defaults`` (the launcher); without, from the RunConfig defaults."""
     unknown = set(R) - set(CONDITIONS)
     if unknown:
         raise ValueError(f"unknown condition keys in R: {sorted(unknown)}")
@@ -108,8 +137,25 @@ def run_plan(R: dict[str, int], include_rotation: bool = True, T: int = 110) -> 
         if cond == "rotation" and not include_rotation:
             continue
         for seed in range(1, R.get(cond, 0) + 1):
-            plan.append(RunConfig(condition=cond, seed=seed, T=T))
+            if defaults is not None:
+                plan.append(run_config_from_defaults(defaults, condition=cond, seed=seed, T=T, cost=cost,
+                                                     **overrides))
+            else:
+                kw = dict(overrides)
+                if cost is not None:
+                    kw["cost"] = cost
+                plan.append(RunConfig(condition=cond, seed=seed, T=T, **kw))
     return plan
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def repo_path(value) -> Path:
+    """An absolute path; a relative one is taken relative to the repository root."""
+    p = Path(value)
+    return p if p.is_absolute() else repo_root() / p
 
 
 def load_defaults(path: str = "config/defaults.json") -> dict:

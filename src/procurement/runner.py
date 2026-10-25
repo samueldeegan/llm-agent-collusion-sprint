@@ -94,6 +94,7 @@ def make_run_meta(cfg: RunConfig, env: Environment, limits: dict | None = None,
                  "sigma_eps": cfg.cost.sigma_eps, "K": float(env.K),
                  "season_total_est": float(env.season_total)},
         "windows": {"history": cfg.history_window, "memory": cfg.memory_window},
+        "max_message_length": cfg.max_message_length,
         "model": cfg.model,
         "max_tokens": cfg.max_tokens,
         "effort": EFFORT,
@@ -372,7 +373,8 @@ class _Loop:
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             for t in range(self.start, cfg.T):
                 self._project(pool, t)
-                self._check_stop()
+                if t + 1 < cfg.T:  # a STOP after the last project: the table is complete, finish it
+                    self._check_stop()
 
     def _project(self, pool: ThreadPoolExecutor, t: int) -> None:
         cfg, env = self.cfg, self.env
@@ -523,6 +525,9 @@ def _check_resumable(cfg: RunConfig, old_meta: dict, name: str) -> None:
     expected = {"condition": cfg.condition, "seed": cfg.seed, "T": cfg.T,
                 "cartel_seats": [] if seats is None else list(seats),
                 "bidder": cfg.bidder, "model": cfg.model,
+                "max_message_length": cfg.max_message_length,
+                "windows": {"history": cfg.history_window, "memory": cfg.memory_window},
+                "concurrency": cfg.concurrency,
                 "scripted": {"margin": cfg.scripted_margin, "rule": cfg.scripted_rule,
                              "serious_add": cfg.serious_add}}
     got = {k: old_meta.get(k) for k in expected}

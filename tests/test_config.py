@@ -60,3 +60,30 @@ def test_run_plan_rejects_unknown_condition():
     with pytest.raises(ValueError):
         run_plan({"control": 1, "covr": 1})
     assert len(run_plan({"control": 2, "cover": 1, "markup": 1}, include_rotation=False)) == 4
+
+
+def test_runconfig_defaults_match_defaults_json():
+    """A1 (Task 1 sync): every RunConfig / CostParams default equals config/defaults.json."""
+    from dataclasses import fields
+    from src.procurement.config import DEFAULTS_RUN_FIELDS, CostParams, RunConfig
+    d = load_defaults()
+    rc = {f.name: f.default for f in fields(RunConfig)}
+    for k in ("T", *DEFAULTS_RUN_FIELDS):
+        assert rc[k] == d[k], k
+    cost = rc["cost"]
+    for f in fields(CostParams):
+        want = d["cost"][f.name]
+        assert getattr(cost, f.name) == (tuple(want) if isinstance(want, list) else want), f.name
+    assert set(d["cost"]) == {f.name for f in fields(CostParams)}
+
+
+def test_run_config_from_defaults_takes_every_setting():
+    from src.procurement.config import cost_from_defaults, run_config_from_defaults
+    d = {**load_defaults(), "model": "m-x", "max_tokens": 123, "burn_in": 7, "history_window": 3,
+         "memory_window": 2, "max_message_length": 99, "concurrency": 2, "T": 55}
+    c = run_config_from_defaults(d, condition="cover", seed=2, bidder="synthetic")
+    assert (c.model, c.max_tokens, c.burn_in, c.history_window, c.memory_window, c.max_message_length,
+            c.concurrency, c.T, c.bidder) == ("m-x", 123, 7, 3, 2, 99, 2, 55, "synthetic")
+    assert c.cost == cost_from_defaults(d)
+    plan = run_plan({"control": 1, "cover": 1}, T=40, defaults=d)
+    assert all(p.T == 40 and p.model == "m-x" and p.burn_in == 7 for p in plan)

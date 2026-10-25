@@ -54,10 +54,10 @@ def render_pre_posting(env: Environment, t: int, caps: np.ndarray, names: list[s
         f"K: ${env.K:,.0f}",
         "CAP is the EST dollars a firm has won so far divided by K.",
         "",
-        f"{'Firm':<24}{'DIST (mi)':>10}{'CAP':>8}{'Firm rate':>11}",
+        f"{'Firm':<28}{'DIST (mi)':>10}{'CAP':>8}{'Firm rate':>11}",
     ]
     for i, name in enumerate(names):
-        lines.append(f"{name:<24}{env.dist[i, t]:>10.1f}{caps[i]:>8.3f}{env.eta[i]:>+11.4f}")
+        lines.append(f"{name:<28}{env.dist[i, t]:>10.1f}{caps[i]:>8.3f}{env.eta[i]:>+11.4f}")
     return "\n".join(lines)
 
 

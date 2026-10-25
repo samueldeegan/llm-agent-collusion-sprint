@@ -22,7 +22,7 @@ RUN_FILES = ["bids.csv", "truth.csv", "messages.csv", "calls.csv", "run_meta.jso
 META_KEYS = {"purpose", "condition", "scheme", "seed", "T", "burn_in", "cartel_seats", "seat_to_firm",
              "cost", "windows", "model", "max_tokens", "effort", "bidder", "concurrency",
              "api_key_slot", "frozen_from", "limits", "started_utc", "finished_utc", "git_commit",
-             "scripted"}
+             "scripted", "max_message_length"}
 
 
 @pytest.fixture(scope="module")
@@ -159,7 +159,7 @@ def test_run_meta_contents(control_run):
     assert meta["seat_to_firm"] == {str(i): n for i, n in enumerate(env.names)}
     assert meta["cost"] == {"beta0": 0.90, "beta1": 0.08, "beta2": 0.17, "sigma_eps": 0.05,
                             "K": env.K, "season_total_est": env.season_total}
-    assert meta["windows"] == {"history": 20, "memory": 10}
+    assert meta["windows"] == {"history": 20, "memory": 10} and meta["max_message_length"] == 500
     assert meta["model"] == "claude-haiku-5-5" and meta["max_tokens"] == 8000
     assert meta["bidder"] == "synthetic" and meta["concurrency"] == 6 and meta["api_key_slot"] == 1
     assert meta["frozen_from"] is None and meta["limits"] is None
@@ -359,3 +359,36 @@ def test_history_copied_per_seat(tmp_path):
     assert all(len(v) == 1 for v in by_t.values())  # every seat saw the same history
     cp = read_checkpoint(d)
     assert len(cp["history"]) == 4 and all(h["winner"] != "corrupted" for h in cp["history"])
+
+
+# ------------------------------------------------------------------ final review fix wave
+
+def test_stop_after_last_project_finishes(tmp_path):
+    """C1: a STOP file that appears during the last project does not stop a complete table: the run
+    finishes and gets finished_utc."""
+    cfg = RunConfig(condition="control", seed=1, T=12)
+    factory = lambda c, env: _StopAfter(c, env, tmp_path, 12)  # noqa: E731
+    d = run(cfg, factory, results_root=tmp_path)  # no SystemExit
+    assert (d / "STOP").is_file()
+    assert len(pd.read_csv(d / "bids.csv")) == 72
+    assert read_run_meta(d)["finished_utc"] is not None
+    # a STOP one project earlier still stops the run
+    root2 = tmp_path / "early"
+    root2.mkdir()
+    with pytest.raises(SystemExit) as exc:
+        run(cfg, lambda c, env: _StopAfter(c, env, root2, 11), results_root=root2)
+    assert exc.value.code == 3
+
+
+def test_same_run_compares_message_cap_windows_concurrency(tmp_path):
+    """A2: the resume/skip check also compares max_message_length, history and memory windows and
+    concurrency."""
+    from dataclasses import replace
+    from src.procurement.runner import same_run
+    cfg = RunConfig(condition="control", seed=1, T=12)
+    meta = read_run_meta(run(cfg, synthetic_bidder_factory, results_root=tmp_path))
+    assert meta["max_message_length"] == 500
+    assert same_run(cfg, meta)
+    for field, value in (("max_message_length", 300), ("history_window", 15), ("memory_window", 7),
+                         ("concurrency", 3)):
+        assert not same_run(replace(cfg, **{field: value}), meta), field

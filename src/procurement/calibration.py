@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.procurement import io
+from src.procurement import config, io
 from src.procurement.config import CostParams, Pricing
 from src.procurement.launcher import A_PRIORI_INPUT, A_PRIORI_OUTPUT  # audit Part 2.2 expected case
 
@@ -51,8 +51,8 @@ def json_clean(obj):
 # ---------------------------------------------------------------- calibration.json
 
 def read_calibration_file(path) -> dict:
-    """The calibration file's content; ``{}`` when it does not exist. A file that is not a JSON object
-    raises ValueError (callers never overwrite it)."""
+    """The calibration file's content; ``{}`` when it does not exist. A file that cannot be read, or is
+    not a JSON object, raises ValueError (callers never overwrite it)."""
     path = Path(path)
     if not path.exists():
         return {}
@@ -60,6 +60,8 @@ def read_calibration_file(path) -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
     except ValueError as exc:
         raise ValueError(f"{path} is not valid JSON; refusing to overwrite it ({exc})") from None
+    except OSError as exc:
+        raise ValueError(f"{path} cannot be read ({type(exc).__name__}: {exc}); refusing to overwrite it") from None
     if not isinstance(data, dict):
         raise ValueError(f"{path} does not hold a JSON object; refusing to overwrite it")
     return data
@@ -177,27 +179,25 @@ def scrub(text: str) -> str:
 
 
 def cost_from_defaults(defaults: dict) -> CostParams:
-    return CostParams(**{k: tuple(v) if isinstance(v, list) else v for k, v in defaults["cost"].items()})
+    return config.cost_from_defaults(defaults)
 
 
 def pricing_from_defaults(defaults: dict) -> Pricing:
     return Pricing(**defaults["pricing"]) if "pricing" in defaults else Pricing()
 
 
-# RunConfig fields a calibration run takes from config/defaults.json (besides ``cost``)
-DEFAULTS_RUN_FIELDS = ("model", "max_tokens", "history_window", "memory_window", "max_message_length",
-                       "concurrency")
+# RunConfig fields every run takes from config/defaults.json (besides ``cost``), shared with the launcher
+DEFAULTS_RUN_FIELDS = config.DEFAULTS_RUN_FIELDS
 
 
 def run_config(defaults: dict, *, condition: str, seed: int, T: int, burn_in: int, bidder: str = "llm",
                cost: CostParams | None = None):
-    """A calibration ``RunConfig``: model, max_tokens, windows, message cap and concurrency from
-    ``defaults`` (``config/defaults.json``), cost from ``cost`` or ``defaults["cost"]``, then the
-    script's condition, seed, T, burn_in and bidder."""
-    from src.procurement.config import RunConfig
-    settings = {k: defaults[k] for k in DEFAULTS_RUN_FIELDS if k in defaults}
-    return RunConfig(condition=condition, seed=seed, T=T, burn_in=burn_in, bidder=bidder,
-                     cost=cost if cost is not None else cost_from_defaults(defaults), **settings)
+    """A calibration ``RunConfig`` through ``config.run_config_from_defaults`` (the launcher's helper):
+    N, model, max_tokens, windows, message cap and concurrency from ``defaults``
+    (``config/defaults.json``), cost from ``cost`` or ``defaults["cost"]``, then the script's condition,
+    seed, T, burn_in and bidder."""
+    return config.run_config_from_defaults(defaults, condition=condition, seed=seed, T=T, cost=cost,
+                                           burn_in=burn_in, bidder=bidder)
 
 
 def estimate_line(prog: str, calls: int, pricing: Pricing, what: str) -> str:

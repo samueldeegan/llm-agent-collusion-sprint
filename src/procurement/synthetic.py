@@ -10,11 +10,11 @@ from src.procurement.io import BIDS_COLUMNS, TRUTH_COLUMNS
 from src.procurement.rules import cover_inflate, cover_shadow, cover_roles, markup_bid, rotation_roles
 from src.procurement.types import BidContext, Bidder, BidResult, MessageResult
 
-HONEST_MARGIN = 1.05
+HONEST_MARGIN = 1.05  # CostParams.honest_margin's default (config/defaults.json cost.honest_margin)
 
 
-def honest_bid(cost: float, est: float, noise: float) -> float:
-    return round(cost * HONEST_MARGIN + est * noise, 2)
+def honest_bid(cost: float, est: float, noise: float, margin: float = HONEST_MARGIN) -> float:
+    return round(cost * margin + est * noise, 2)
 
 
 def scheme_message_text(cost: float, intended: float) -> str:
@@ -41,7 +41,8 @@ class SyntheticBidder:
         self.noise = noise_array(seed, cost, T, N)
 
     def _honest(self, ctx: BidContext) -> float:
-        return honest_bid(ctx.cost, float(ctx.env.est[ctx.t]), float(self.noise[ctx.seat, ctx.t]))
+        return honest_bid(ctx.cost, float(ctx.env.est[ctx.t]), float(self.noise[ctx.seat, ctx.t]),
+                          self.cost.honest_margin)
 
     def _serious(self, ctx: BidContext) -> float:
         est = float(ctx.env.est[ctx.t])
@@ -99,7 +100,7 @@ def simulate_table(seed: int, cost: CostParams, T: int, scheme: str | None,
         est = float(env.est[t])
         cap = won / env.K
         costs = [cost_of(env, cost, i, t, cap[i]) for i in range(N)]
-        bids = [honest_bid(costs[i], est, noise[i, t]) for i in range(N)]
+        bids = [honest_bid(costs[i], est, noise[i, t], cost.honest_margin) for i in range(N)]
         if shock is not None:
             d = shock_rng.normal(0, shock)
             bids[0] = round(bids[0] + d * est, 2)

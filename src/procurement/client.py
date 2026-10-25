@@ -18,7 +18,15 @@ from typing import Callable
 import anthropic
 
 KEY_VARS = {1: "ANTHROPIC_API_KEY", 2: "ANTHROPIC_API_KEY_2"}
-BUDGET_SECONDS = 600.0
+
+
+def default_budget_s() -> float:
+    """The per-call transport budget: ``transport_budget_s`` of ``config/defaults.json`` (600 s)."""
+    from src.procurement.config import load_defaults
+    return float(load_defaults().get("transport_budget_s", 600.0))
+
+
+BUDGET_SECONDS = default_budget_s()
 BACKOFF_START = 2.0
 BACKOFF_CAP = 60.0
 SDK_TIMEOUT = 180.0
@@ -196,12 +204,15 @@ class HaikuClient:
     def __init__(self, model: str, max_tokens: int, api_key_slot: int = 1,
                  transport: Callable[[dict], tuple[dict, dict]] | None = None,
                  clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep,
-                 jitter_seed: int | None = None, on_attempt: Callable[[], None] | None = None):
+                 jitter_seed: int | None = None, on_attempt: Callable[[], None] | None = None,
+                 budget_s: float | None = None):
         if api_key_slot not in KEY_VARS:
             raise ValueError(f"api_key_slot must be 1 or 2, got {api_key_slot!r}")
         self.model, self.max_tokens, self.api_key_slot = model, max_tokens, api_key_slot
         self._transport = transport if transport is not None else _DefaultTransport(KEY_VARS[api_key_slot])
         self._clock, self._sleep = clock, sleep
+        # retries stop once the next wait would pass this many seconds since the call began (spec 4d)
+        self.budget_s = float(BUDGET_SECONDS if budget_s is None else budget_s)
         self._rng = random.Random(jitter_seed)
         # Called at the start and end of every attempt (the runner touches heartbeat activity, A52);
         # may be (re)assigned after construction. Its exceptions are dropped.
@@ -277,7 +288,7 @@ class HaikuClient:
                 else:
                     wait = min(BACKOFF_START * 2 ** retries, BACKOFF_CAP) + self._rng.uniform(0, 1)
                 retries += 1
-                if self._clock() + wait > start + BUDGET_SECONDS:
+                if self._clock() + wait > start + self.budget_s:
                     return None, with_content_reason(records, "transport_failed")
                 self._sleep(wait)
                 continue
