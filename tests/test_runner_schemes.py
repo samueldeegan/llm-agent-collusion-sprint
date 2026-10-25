@@ -182,6 +182,20 @@ def test_end_to_end_synthetic_each_scheme_files(scheme_runs, scheme):
     assert list(msgs["text"]) == [r["text"] for r in mm]
 
 
+def test_end_to_end_synthetic_each_scheme_detector(scheme_runs):
+    """Cover seed 1 through the detector: the cartel pair (seats (0, 3) by the §4f seat rule; test-side
+    knowledge, the detector never sees it) shows the cover signature at tag / usable_T 100."""
+    from src.procurement.detector import detect_run
+    d = scheme_runs["cover"]
+    out = detect_run(d)
+    assert (d / "detector" / "pair_stats.csv").is_file()
+    a, b = sorted((ENV1.names[0], ENV1.names[3]))
+    row = out[(out.spec == "tag") & (out.usable_T == 100) & (out.firm_i == a) & (out.firm_j == b)]
+    assert len(row) == 1
+    assert row["r"].iloc[0] < 0 and row["a1_flag"].iloc[0] == 1
+    assert row["primary"].iloc[0] == 1 and row["complete"].iloc[0] == 1
+
+
 # ------------------------------------------------------------------ equivalence with the simulator
 
 @pytest.mark.parametrize("cfg", [
