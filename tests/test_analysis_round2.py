@@ -212,3 +212,58 @@ def test_null_threshold_guard():
     bad.loc[bad["arm"] == "hidden", "percentile_95"] = thr["base"][("tag_filtered", "A3")]
     with pytest.raises(AssertionError):
         ar2.check_null_thresholds(bad, thr)
+
+
+# ------------------------------------------------------------------ final-fix wave: price stats, cosmetics
+
+def _price_bids(bids: list, est: float = 1000.0) -> pd.DataFrame:
+    return pd.DataFrame(dict(project_id=[1] + list(range(11, 11 + len(bids) - 1)), firm_id="A", est=est,
+                             bid=bids))
+
+
+def test_bid_price_stats_excludes_placeholders():
+    # project 1 is burn-in (ignored); post-burn-in bids: 1.1, 1.0 x EST, a 9,999,999 placeholder, a missing bid
+    bids = _price_bids([5000.0, 1100.0, 1000.0, 9_999_999.0, np.nan])
+    mean, share = ar2.bid_price_stats(bids, 10)
+    assert mean == pytest.approx(1.05) and share == pytest.approx(0.5)
+    # a bid exactly at 1.5 x EST is a price; just above is a sentinel
+    mean, share = ar2.bid_price_stats(_price_bids([0.0, 1500.0, 1500.01]), 10)
+    assert mean == pytest.approx(1.5) and share == pytest.approx(0.5)
+    # per-row EST
+    b = pd.DataFrame(dict(project_id=[11, 12], firm_id="A", est=[1000.0, 2000.0], bid=[1100.0, 3100.0]))
+    mean, share = ar2.bid_price_stats(b, 10)
+    assert mean == pytest.approx(1.1) and share == pytest.approx(0.5)
+    # all sentinel -> NaN mean, share 1; no post-burn-in rows -> NaN, NaN
+    mean, share = ar2.bid_price_stats(_price_bids([0.0, 9_999_999.0]), 10)
+    assert math.isnan(mean) and share == 1.0
+    assert all(math.isnan(x) for x in ar2.bid_price_stats(_price_bids([1000.0]), 10))
+
+
+def test_readme_price_columns_and_summary(built):
+    text = (built["root"].parent / "README_round2.md").read_text(encoding="utf-8")
+    assert "mean bid/EST, non-sentinel bids" in text and "sentinel/no-bid share" in text
+    assert "| mean bid/EST |" not in text
+    inv = ar2._inventory(pd.read_csv(built["out"] / "evaluation" / "run_eval.csv"), built["root"])
+    assert list(inv.columns) == ar2.INVENTORY_COLUMNS
+    assert inv["mean_bid_over_est_nonsentinel"].notna().all() and inv["sentinel_share"].notna().all()
+    assert ar2._f(inv["mean_bid_over_est_nonsentinel"].iloc[0]) in text
+
+
+def test_cosmetics():
+    assert ar2._p(0.0004) == "<0.001" and ar2._p(0.001) == "0.001" and ar2._p(0.0126) == "0.013"
+    assert ar2._p(float("nan")) == "n/a"
+    assert ar2._count_median(18.0) == "18" and ar2._count_median(17.5) == "17.5"
+
+
+def test_spend_scope_and_wins_and_cli_note(built, tmp_path, capsys):
+    scope = ar2.spend_summary(built["root"])["scope"]
+    assert scope == "`runs/` and `calibration_runs/` (both relative to `results/`)"
+    text = (built["root"].parent / "README_round2.md").read_text(encoding="utf-8")
+    assert "18.000" not in text and ".000 |" not in text.split("Per-arm medians")[1].split("<details>")[0].split("wins")[1]
+    out = tmp_path / "an"
+    arch = tmp_path / "arch"
+    arch.mkdir()
+    ar2.main(["--results-root", str(built["root"]), "--out", str(out), "--archives", str(arch),
+              "--frozen", str(tmp_path / "none.json"), "--include-synthetic"])
+    assert "each run overwrites" in capsys.readouterr().out
+    assert "overwrites" in ar2.__doc__

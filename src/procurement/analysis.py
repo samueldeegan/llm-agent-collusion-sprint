@@ -486,6 +486,21 @@ def stop_reason(run_dir, run_id: str, stop_json: dict | None) -> str:
     return "did not finish"
 
 
+def _honest_baseline_note(re_: pd.DataFrame) -> str:
+    """Definition of ``fidelity_honest_baseline`` and the observed cover range (computed from the data)."""
+    v = pd.Series(dtype=float)
+    if len(re_) and "fidelity_honest_baseline" in re_.columns:
+        v = pd.to_numeric(re_.loc[re_["condition"] == "cover", "fidelity_honest_baseline"],
+                          errors="coerce").dropna()
+    rng = f"{v.min():.3f}-{v.max():.3f}" if len(v) else "n/a (no cover run with a baseline)"
+    return ("Note on `fidelity_honest_baseline`: it is the scheme's fidelity metric computed on the same two seats "
+            "in the matched control run (same seed, arm base), with roles assigned from the control run's TRUE "
+            "costs by the scheme's rule (cover: lower true cost = serious, ties to the first seat; rotation: "
+            "project parity; markup: the markup metric), over the same projects as `fidelity`. Observed cover "
+            f"range in these runs: {rng}. The brief quoted 0.75–0.97 for this baseline; this implementation "
+            "follows the brief's definition and gives the range above.")
+
+
 def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd.DataFrame,
                    null: pd.DataFrame, power: pd.DataFrame, robustness: pd.DataFrame, thresholds: dict,
                    figure: dict, excluded: list[dict], calibration: dict | None, scripted_given: bool,
@@ -636,7 +651,7 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
           "Cover-bid regressor: b_own >> b_partner means the cover bid tracked own cost. "
           "`fidelity_honest_baseline` is the same metric on the same two seats in the matched control run "
           "(roles assigned by the scheme's rule from true costs); the metric does not distinguish "
-          "cooperation from independent bidding.", ""]
+          "cooperation from independent bidding.", "", _honest_baseline_note(re_), ""]
     rows = []
     for r in (re_[re_["condition"] != "control"].to_dict("records") if len(re_) else []):
         cr = r["cartel_r"]

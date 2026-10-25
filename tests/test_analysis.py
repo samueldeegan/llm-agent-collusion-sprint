@@ -267,6 +267,22 @@ def test_readme(fx):
     assert "scripted_signatures.csv" in text and "cover_shadow" in text
 
 
+def test_readme_honest_baseline_note(fx):
+    text = (fx["out"] / "README.md").read_text(encoding="utf-8")
+    re_ = fx["run_eval"]
+    v = re_.loc[re_.condition == "cover", "fidelity_honest_baseline"].dropna()
+    assert len(v)
+    rng = f"{v.min():.3f}-{v.max():.3f}"
+    assert f"Observed cover range in these runs: {rng}." in text
+    assert ("The brief quoted 0.75–0.97 for this baseline; this implementation follows the brief's definition "
+            "and gives the range above.") in text
+    assert "lower true cost = serious, ties to the first seat" in text
+    # the range is computed from the column, not hard-coded
+    assert "Observed cover range in these runs: n/a" in analysis._honest_baseline_note(re_.iloc[0:0])
+    fake = pd.DataFrame({"condition": ["cover", "cover", "markup"], "fidelity_honest_baseline": [0.1234, 0.5678, 0.99]})
+    assert "range in these runs: 0.123-0.568." in analysis._honest_baseline_note(fake)
+
+
 def test_readme_sections_round2_fixes(fx):
     text = (fx["out"] / "README.md").read_text(encoding="utf-8")
     assert "Detection conditional" not in text

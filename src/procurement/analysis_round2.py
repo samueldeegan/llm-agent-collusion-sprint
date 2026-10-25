@@ -8,7 +8,8 @@ keeps the control runs only (the round-1 scheme runs are not round-2 material) a
 ``slope_dispersion_by_arm.csv``, ``synthetic_floors.csv`` (base arm's complete control runs),
 ``paired_by_seed.csv``, ``flag_rates_at_base_threshold.csv`` (non-base arms at the base arm's p95,
 out-of-sample), ``ablation_2x2.png`` and ``README.md``; the same README is written to
-``results_root.parent / "README_round2.md"`` (the two differ only in the figure link, relative to each).
+``results_root.parent / "README_round2.md"`` (the two differ only in the figure link, relative to each). Every run OVERWRITES ``README_round2.md``;
+the analysis directory itself is always new (a non-empty one is refused).
 
 Reads: what ``evaluation.evaluate`` reads, plus each selected control run's ``bids.csv``, ``truth.csv``
 and ``run_meta.json`` (regimes, slope dispersion, floors) and, for the spend, every ``calls.csv`` under
@@ -16,7 +17,7 @@ and ``run_meta.json`` (regimes, slope dispersion, floors) and, for the spend, ev
 
 CLI: ``python -m src.procurement.analysis_round2 [--results-root results/runs] [--out DIR]
 [--archives results/archive] [--include-synthetic] [--frozen config/frozen.json]`` (relative paths
-resolve against the repository root).
+resolve against the repository root). Each run overwrites ``results/README_round2.md``; the CLI prints that.
 """
 from __future__ import annotations
 
@@ -56,7 +57,8 @@ FP_T_COLUMNS = ["arm", "spec", "usable_T", "test", "n_pairs", "n_flagged", "rate
 PAIRED_COLUMNS = ["arm", "test", "n_seeds", "n_pos", "n_neg", "n_zero", "mean_diff", "wilcoxon_p"]
 PAIR_TYPE_COLUMNS = ["arm", "regime_i", "regime_j", "n_pairs", "n_rejected", "rate"]
 COUNT_COLUMNS = ["arm", "regime", "n_firm_seasons"]
-INVENTORY_COLUMNS = ["arm", "run_id", "seed", "run_dir", "complete", "projects_completed", "mean_bid_over_est"]
+INVENTORY_COLUMNS = ["arm", "run_id", "seed", "run_dir", "complete", "projects_completed",
+                     "mean_bid_over_est_nonsentinel", "sentinel_share"]
 
 ROUND1_LOSS_NOTE = ("Round-1 transcripts: `round1_transcripts.zip` holds only the 5 round-1 calibration runs; the "
                     "32 round-1 experiment runs' transcripts were deleted by accident on 2026-10-25 (~21:40 UTC) "
@@ -372,7 +374,17 @@ _table = analysis._table
 
 
 def _p(v) -> str:
-    return "n/a" if _isnan(v) else f"{float(v):.3f}"
+    if _isnan(v):
+        return "n/a"
+    return "<0.001" if float(v) < 0.001 else f"{float(v):.3f}"
+
+
+def _count_median(v) -> str:
+    """Median of a count: an integer when whole, else one decimal."""
+    if _isnan(v):
+        return "n/a"
+    v = float(v)
+    return f"{int(v)}" if v == int(v) else f"{v:.1f}"
 
 
 def _rate_cell(r, ci: bool = True) -> str:
@@ -453,9 +465,12 @@ def _summary(*, inventory, flags, null, counts, floors, paired, dispersion, spen
         lines.append("Synthetic floors: not computed (no complete base control run).")
     mb = []
     for a in _arms_in(inventory["arm"]) if len(inventory) else []:
-        v = _num(inventory[(inventory["arm"] == a) & (_num(inventory, "complete") == 1)], "mean_bid_over_est")
-        mb.append(f"{a} {_f(v.mean())}")
-    lines.append("Mean bid/EST over post-burn-in bids (mean over complete runs): " + (", ".join(mb) or "n/a") + ".")
+        g = inventory[(inventory["arm"] == a) & (_num(inventory, "complete") == 1)]
+        mb.append(f"{a} {_f(_num(g, 'mean_bid_over_est_nonsentinel').mean())} / "
+                  f"{_f(_num(g, 'sentinel_share').mean())}")
+    lines.append("Mean bid/EST, non-sentinel bids (bid ≤ " f"{rg.SENTINEL_RATIO} × EST) / sentinel/no-bid share "
+                 "(post-burn-in firm-project rows with bid > " f"{rg.SENTINEL_RATIO} × EST or missing), mean over "
+                 "complete runs: " + (", ".join(mb) or "n/a") + ".")
     if dispersion is not None and len(dispersion):
         late = dispersion[dispersion["half"] == rg.HALVES[-1][0]]
         lines.append(f"Slope dispersion, projects {rg.HALVES[-1][0]} (mean over runs of the SD across firms of the "
@@ -599,8 +614,8 @@ def write_readme_round2(path, *, inventory: pd.DataFrame, flags: pd.DataFrame, n
         L += ["Per-arm medians over firm-seasons:", ""]
         cols = ["pass_rate", "margin_med", "margin_iqr", "margin_when_leading", "margin_when_trailing",
                 "shade_slope", "wins", "profit"]
-        L += _table(["arm", *cols], [[a, *[_f(_num(regimes[regimes["arm"] == a], c).median()) for c in cols]]
-                                     for a in _arms_in(regimes["arm"])])
+        L += _table(["arm", *cols], [[a, *[(_count_median if c == "wins" else _f)(
+            _num(regimes[regimes["arm"] == a], c).median()) for c in cols]] for a in _arms_in(regimes["arm"])])
         L += ["", "<details><summary>Every firm-season (regimes_by_arm.csv)</summary>", ""]
         show = ["arm", "run_id", "firm_id", "seat", *cols, "regime"]
         L += _table(show, [[r[c] if c in ("arm", "run_id", "firm_id", "regime") else
@@ -665,8 +680,10 @@ def write_readme_round2(path, *, inventory: pd.DataFrame, flags: pd.DataFrame, n
         L += _table(["arm", "memory", "information", "runs", "complete", "incomplete"], rows)
         L += ["", "memory off* = private memory and scratchpad off, public bid history kept.", ""]
         rows = [[r["arm"], r["run_id"], int(r["seed"]), f"`{r['run_dir']}`", "yes" if r["complete"] == 1 else "no",
-                 int(r["projects_completed"]), _f(r["mean_bid_over_est"])] for r in inventory.to_dict("records")]
-        L += _table(["arm", "run", "seed", "run directory", "complete", "projects", "mean bid/EST"], rows)
+                 int(r["projects_completed"]), _f(r["mean_bid_over_est_nonsentinel"]), _f(r["sentinel_share"])]
+                for r in inventory.to_dict("records")]
+        L += _table(["arm", "run", "seed", "run directory", "complete", "projects",
+                     "mean bid/EST, non-sentinel bids", "sentinel/no-bid share"], rows)
     L.append("")
 
     # ---- archives
@@ -743,13 +760,37 @@ def spend_summary(results_root) -> dict:
     usd2, calls2 = launcher.spend_totals(r2, pricing)
     root = Path(results_root)
     return dict(total_usd=usd, total_calls=calls, n_dirs=len(dirs), round2_usd=usd2, round2_calls=calls2,
-                round2_dirs=len(r2), scope=f"`{root.name}/` and `{root.parent.name}/calibration_runs/`")
+                round2_dirs=len(r2), scope=f"`{root.name}/` and `calibration_runs/` (both relative to `{root.parent.name}/`)")
 
 
-def _inventory(run_eval: pd.DataFrame) -> pd.DataFrame:
+def bid_price_stats(bids: pd.DataFrame, burn_in: int) -> tuple[float, float]:
+    """(mean bid/EST over the non-sentinel post-burn-in bids, sentinel share of the post-burn-in rows).
+    Sentinel = bid missing or bid > ``detector.SENTINEL_RATIO`` × the row's EST (a no-bid placeholder, not a
+    price). NaN, NaN when there is no post-burn-in row; NaN mean when every row is a sentinel."""
+    post = bids[pd.to_numeric(bids["project_id"], errors="coerce") > burn_in]
+    if post.empty:
+        return float("nan"), float("nan")
+    bid, est = pd.to_numeric(post["bid"], errors="coerce"), pd.to_numeric(post["est"], errors="coerce")
+    sentinel = bid.isna() | (bid > detector.SENTINEL_RATIO * est)
+    ratio = (bid / est)[~sentinel]
+    return (float(ratio.mean()) if len(ratio) else float("nan")), float(sentinel.mean())
+
+
+def _inventory(run_eval: pd.DataFrame, results_root=None) -> pd.DataFrame:
+    """One row per control run. The price columns come from each run's ``bids.csv`` (``bid_price_stats``);
+    NaN when ``results_root`` is not given or the run's bids cannot be read."""
     if run_eval.empty:
         return pd.DataFrame(columns=INVENTORY_COLUMNS)
     re_ = run_eval[run_eval["condition"] == CONTROL].copy()
+    stats_ = []
+    for r in re_.to_dict("records"):
+        try:
+            d = Path(results_root) / str(r["run_dir"])
+            stats_.append(bid_price_stats(io.read_bids(d), int(io.read_run_meta(d)["burn_in"])))
+        except (OSError, ValueError, KeyError, TypeError):
+            stats_.append((float("nan"), float("nan")))
+    re_["mean_bid_over_est_nonsentinel"] = [a for a, _ in stats_]
+    re_["sentinel_share"] = [b for _, b in stats_]
     rank = {a: k for k, a in enumerate(ARMS)}
     re_["_k"] = re_["arm"].map(lambda a: rank.get(a, len(rank)))
     re_ = re_.sort_values(["_k", "arm", "seed"]).reset_index(drop=True)
@@ -762,7 +803,7 @@ def analyze_round2(results_root, out_dir, *, archives: list[dict] | None = None,
                    frozen_path=None, include_synthetic: bool = False) -> Path:
     """Evaluate ``results_root`` and write the round-2 files (module docstring) into ``out_dir`` (new or
     empty; a non-empty one is refused) and ``results_root.parent / "README_round2.md"``. Returns
-    ``out_dir``. ``include_synthetic`` and ``frozen_path`` select runs as in ``evaluation.evaluate``;
+    ``out_dir``. Each run overwrites ``README_round2.md``; the analysis directory itself is always new. ``include_synthetic`` and ``frozen_path`` select runs as in ``evaluation.evaluate``;
     ``spend`` defaults to ``spend_summary(results_root)``."""
     results_root, out_dir = Path(results_root), Path(out_dir)
     if out_dir.exists() and any(out_dir.iterdir()):
@@ -813,7 +854,7 @@ def analyze_round2(results_root, out_dir, *, archives: list[dict] | None = None,
         floors = pd.DataFrame(columns=floors_mod.FLOOR_COLUMNS)
 
     figure = ablation_figure(flags, counts, floors, out_dir / "ablation_2x2.png")
-    inventory = _inventory(run_eval)
+    inventory = _inventory(run_eval, results_root)
 
     analysis._write(out_dir / "flag_rates_by_arm.csv", flags, FLAG_COLUMNS)
     analysis._write(out_dir / "empirical_null_by_arm.csv", null, NULL_COLUMNS)
@@ -852,6 +893,7 @@ def main(argv=None) -> Path:
     analyze_round2(root, out, archives=archive_entries(config.repo_path(args.archives)),
                    frozen_path=config.repo_path(args.frozen), include_synthetic=args.include_synthetic)
     print(f"round-2 analysis -> {out}; README -> {root.parent / README_NAME}")
+    print(f"note: each run overwrites {root.parent / README_NAME}; the analysis directory itself is always new")
     return out
 
 

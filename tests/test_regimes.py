@@ -192,3 +192,23 @@ def test_shade_slope_min_rows_threshold():
             assert abs(tab.loc["A", "shade_slope"] - 0.5) < 1e-9
         else:
             assert np.isnan(tab.loc["A", "shade_slope"])
+
+
+def test_slope_dispersion_unidentified_slope_is_nan():
+    # CAP constant for firm A (0), so A's CAP slope is unidentified: NaN, not the minimum-norm 0.0
+    b, t = build(lambda f, p, o, g, c: o + 0.02 * EST, n=110)
+    b.loc[b["firm_id"] == "A", "cap"] = 0.0
+    b["bid"] = [r.bid + (EST * 0.3 * r.cap if r.firm_id == "B" else 0) for r in b.itertuples()]
+    rows = rg.slope_dispersion(b, t, 10, "base", RID)
+    # SD across the five identified firms only: B has slope 0.3, the rest 0 -> sd of [0.3,0,0,0,0] (ddof 1)
+    expected = float(np.std([0.3, 0, 0, 0, 0], ddof=1))
+    for r in rows:
+        assert abs(r["sd_cap_slope"] - expected) < 1e-9
+    # constant ln(1+DIST) -> DIST slope NaN for that firm
+    b2, t2 = build(lambda f, p, o, g, c: o + 0.02 * EST, n=110)
+    b2.loc[b2["firm_id"] == "A", "dist"] = 2.0
+    rows2 = rg.slope_dispersion(b2, t2, 10, "base", RID)
+    assert all(np.isfinite(r["sd_dist_slope"]) and r["sd_dist_slope"] < 1e-9 for r in rows2)
+    only_a = b2[b2["firm_id"].isin(["A", "B"])]
+    rows3 = rg.slope_dispersion(only_a, t2[t2["firm_id"].isin(["A", "B"])], 10, "base", RID)
+    assert all(np.isnan(r["sd_dist_slope"]) for r in rows3)  # one identified firm: SD undefined

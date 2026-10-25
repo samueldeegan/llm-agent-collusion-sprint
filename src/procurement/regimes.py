@@ -142,8 +142,9 @@ def slope_dispersion(bids: pd.DataFrame, truth: pd.DataFrame, burn_in: int, arm:
                 continue
             X = np.column_stack([np.ones(len(g)), np.log1p(g["dist"]), g["cap"]])
             b = _ols(g["margin"].to_numpy(), X)
-            dists.append(b[1])
-            caps.append(b[2])
+            # lstsq returns a minimum-norm slope (0.0) for an unidentified regressor; report NaN instead
+            dists.append(b[1] if np.ptp(X[:, 1]) > 0 else np.nan)
+            caps.append(b[2] if np.ptp(X[:, 2]) > 0 else np.nan)
         out.append(dict(arm=arm, run_id=run_id, half=label, sd_cap_slope=_sd(caps), sd_dist_slope=_sd(dists)))
     return out
 
