@@ -1,0 +1,72 @@
+2026-10-25T18:11:59.183979+00:00 launch plan: 32 runs: cover 12, markup 4, rotation 4, control 12
+2026-10-25T18:11:59.184729+00:00 R = 12/12/4/4 (control/cover/markup/rotation), T 110, cap 32 (per key slot 1: 32; call_s 8.61106), keys 1, bidder llm
+2026-10-25T18:11:59.184729+00:00 planned calls 25520; a-priori cost $28.07 at 3.5k input / 1.5k output tokens per call
+2026-10-25T18:11:59.184729+00:00 sizing rule from calibration.json: output-tokens limit 2000000, key 2 not set; sized R 12/12/4/4 (control/cover/markup/rotation), plan R 12/12/4/4 (control/cover/markup/rotation) -> R 12/12/4/4 (control/cover/markup/rotation) (per-condition minimum)
+2026-10-25T18:11:59.185480+00:00 spend baseline $0.48 over 418 calls in 5 existing run dir(s)
+2026-10-25T18:11:59.185480+00:00 frozen parameters: config/frozen.json; time ladder: no rung
+2026-10-25T18:11:59.186230+00:00 spend baseline $0.48 over 418 calls in 5 existing run dir(s) under C:\Users\samue\PycharmProjects\llm-agent-collusion\results
+2026-10-25T18:11:59.192523+00:00 00_cover_s1: start attempt 1 (slot 1, fresh, pid 14948)
+2026-10-25T18:12:04.193329+00:00 01_cover_s2: start attempt 1 (slot 1, fresh, pid 31068)
+2026-10-25T18:12:09.193545+00:00 02_cover_s3: start attempt 1 (slot 1, fresh, pid 27396)
+2026-10-25T18:12:14.194219+00:00 03_cover_s4: start attempt 1 (slot 1, fresh, pid 30592)
+2026-10-25T18:12:19.194648+00:00 04_cover_s5: start attempt 1 (slot 1, fresh, pid 21856)
+2026-10-25T18:12:24.195452+00:00 05_cover_s6: start attempt 1 (slot 1, fresh, pid 32740)
+2026-10-25T18:12:29.197089+00:00 06_cover_s7: start attempt 1 (slot 1, fresh, pid 32228)
+2026-10-25T18:12:34.196269+00:00 07_cover_s8: start attempt 1 (slot 1, fresh, pid 31064)
+2026-10-25T18:12:39.197184+00:00 08_cover_s9: start attempt 1 (slot 1, fresh, pid 31508)
+2026-10-25T18:12:44.197859+00:00 09_cover_s10: start attempt 1 (slot 1, fresh, pid 18996)
+2026-10-25T18:12:49.197777+00:00 10_cover_s11: start attempt 1 (slot 1, fresh, pid 32208)
+2026-10-25T18:12:54.199722+00:00 11_cover_s12: start attempt 1 (slot 1, fresh, pid 31668)
+2026-10-25T18:12:59.228486+00:00 12_markup_s1: start attempt 1 (slot 1, fresh, pid 31808)
+2026-10-25T18:13:04.229164+00:00 13_markup_s2: start attempt 1 (slot 1, fresh, pid 2716)
+2026-10-25T18:13:09.230105+00:00 14_markup_s3: start attempt 1 (slot 1, fresh, pid 27984)
+2026-10-25T18:13:14.230105+00:00 15_markup_s4: start attempt 1 (slot 1, fresh, pid 31656)
+2026-10-25T18:13:19.231284+00:00 16_rotation_s1: start attempt 1 (slot 1, fresh, pid 14056)
+2026-10-25T18:13:24.231900+00:00 17_rotation_s2: start attempt 1 (slot 1, fresh, pid 27140)
+2026-10-25T18:13:29.231820+00:00 18_rotation_s3: start attempt 1 (slot 1, fresh, pid 29344)
+2026-10-25T18:13:34.233625+00:00 19_rotation_s4: start attempt 1 (slot 1, fresh, pid 1320)
+2026-10-25T18:13:39.234090+00:00 20_control_s1: start attempt 1 (slot 1, fresh, pid 11112)
+2026-10-25T18:13:44.234000+00:00 21_control_s2: start attempt 1 (slot 1, fresh, pid 28508)
+2026-10-25T18:13:49.235704+00:00 22_control_s3: start attempt 1 (slot 1, fresh, pid 6008)
+2026-10-25T18:13:54.235552+00:00 23_control_s4: start attempt 1 (slot 1, fresh, pid 32724)
+2026-10-25T18:13:59.259787+00:00 24_control_s5: start attempt 1 (slot 1, fresh, pid 26436)
+2026-10-25T18:14:04.260707+00:00 25_control_s6: start attempt 1 (slot 1, fresh, pid 25148)
+2026-10-25T18:14:09.262344+00:00 26_control_s7: start attempt 1 (slot 1, fresh, pid 33104)
+2026-10-25T18:14:14.262297+00:00 27_control_s8: start attempt 1 (slot 1, fresh, pid 33784)
+2026-10-25T18:14:19.263116+00:00 28_control_s9: start attempt 1 (slot 1, fresh, pid 33508)
+2026-10-25T18:14:24.263707+00:00 29_control_s10: start attempt 1 (slot 1, fresh, pid 32976)
+2026-10-25T18:14:29.264452+00:00 30_control_s11: start attempt 1 (slot 1, fresh, pid 30820)
+2026-10-25T18:14:34.264945+00:00 31_control_s12: start attempt 1 (slot 1, fresh, pid 33640)
+2026-10-25T18:33:59.230050+00:00 20_control_s1: done
+2026-10-25T18:33:59.230800+00:00 21_control_s2: done
+2026-10-25T18:33:59.230800+00:00 22_control_s3: done
+2026-10-25T18:33:59.232305+00:00 24_control_s5: done
+2026-10-25T18:33:59.233054+00:00 25_control_s6: done
+2026-10-25T18:33:59.233054+00:00 26_control_s7: done
+2026-10-25T18:33:59.233054+00:00 27_control_s8: done
+2026-10-25T18:33:59.233804+00:00 28_control_s9: done
+2026-10-25T18:33:59.233804+00:00 29_control_s10: done
+2026-10-25T18:34:59.224302+00:00 23_control_s4: done
+2026-10-25T18:34:59.224302+00:00 30_control_s11: done
+2026-10-25T18:34:59.224302+00:00 31_control_s12: done
+2026-10-25T18:42:59.244125+00:00 14_markup_s3: done
+2026-10-25T18:43:59.247992+00:00 13_markup_s2: done
+2026-10-25T18:48:59.268068+00:00 12_markup_s1: done
+2026-10-25T18:48:59.268068+00:00 15_markup_s4: done
+2026-10-25T18:49:59.283530+00:00 02_cover_s3: done
+2026-10-25T18:49:59.283530+00:00 05_cover_s6: done
+2026-10-25T18:49:59.284282+00:00 07_cover_s8: done
+2026-10-25T18:50:59.286858+00:00 00_cover_s1: done
+2026-10-25T18:50:59.287607+00:00 16_rotation_s1: done
+2026-10-25T18:51:59.289956+00:00 03_cover_s4: done
+2026-10-25T18:51:59.289956+00:00 08_cover_s9: done
+2026-10-25T18:52:59.288751+00:00 01_cover_s2: done
+2026-10-25T18:52:59.289501+00:00 06_cover_s7: done
+2026-10-25T18:52:59.289501+00:00 09_cover_s10: done
+2026-10-25T18:52:59.289501+00:00 10_cover_s11: done
+2026-10-25T18:52:59.289501+00:00 11_cover_s12: done
+2026-10-25T18:52:59.290251+00:00 19_rotation_s4: done
+2026-10-25T18:53:59.288642+00:00 17_rotation_s2: done
+2026-10-25T18:54:59.289350+00:00 04_cover_s5: done
+2026-10-25T18:54:59.290105+00:00 18_rotation_s3: done
+2026-10-25T18:54:59.337618+00:00 all runs terminal; launcher exit 0

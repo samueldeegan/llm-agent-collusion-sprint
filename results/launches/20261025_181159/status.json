@@ -1,0 +1,547 @@
+{
+  "R": {
+    "control": 12,
+    "cover": 12,
+    "markup": 4,
+    "rotation": 4
+  },
+  "T": 110,
+  "include_rotation": true,
+  "cap": 32,
+  "keys": 1,
+  "rung": 0,
+  "dry_run": false,
+  "call_s": 8.6110625,
+  "sizing": "sizing rule from calibration.json: output-tokens limit 2000000, key 2 not set; sized R 12/12/4/4 (control/cover/markup/rotation), plan R 12/12/4/4 (control/cover/markup/rotation) -> R 12/12/4/4 (control/cover/markup/rotation) (per-condition minimum)",
+  "frozen_from": "config/frozen.json",
+  "bidder": "llm",
+  "deadline_utc": "2026-10-26T11:59:00Z",
+  "skipped_done": [],
+  "launch_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\launches\\20261025_181159",
+  "utc": "2026-10-25T18:54:59.337618+00:00",
+  "last_poll_utc": "2026-10-25T18:54:59.289350+00:00",
+  "caps": {
+    "1": 32
+  },
+  "planned_calls": 25520,
+  "actual_usd": 33.70031715000002,
+  "projected_usd": 33.70031715000002,
+  "baseline_usd": 0.476831705,
+  "baseline_calls": 418,
+  "exit_code": 0,
+  "stop_reason": null,
+  "runs": [
+    {
+      "name": "00_cover_s1",
+      "launch_index": 0,
+      "condition": "cover",
+      "seed": 1,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181159_cover_s1",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181159_cover_s1"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "01_cover_s2",
+      "launch_index": 1,
+      "condition": "cover",
+      "seed": 2,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181204_cover_s2",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181204_cover_s2"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "02_cover_s3",
+      "launch_index": 2,
+      "condition": "cover",
+      "seed": 3,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181209_cover_s3",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181209_cover_s3"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "03_cover_s4",
+      "launch_index": 3,
+      "condition": "cover",
+      "seed": 4,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181214_cover_s4",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181214_cover_s4"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "04_cover_s5",
+      "launch_index": 4,
+      "condition": "cover",
+      "seed": 5,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181219_cover_s5",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181219_cover_s5"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "05_cover_s6",
+      "launch_index": 5,
+      "condition": "cover",
+      "seed": 6,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181224_cover_s6",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181224_cover_s6"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "06_cover_s7",
+      "launch_index": 6,
+      "condition": "cover",
+      "seed": 7,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181229_cover_s7",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181229_cover_s7"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "07_cover_s8",
+      "launch_index": 7,
+      "condition": "cover",
+      "seed": 8,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181234_cover_s8",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181234_cover_s8"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "08_cover_s9",
+      "launch_index": 8,
+      "condition": "cover",
+      "seed": 9,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181239_cover_s9",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181239_cover_s9"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "09_cover_s10",
+      "launch_index": 9,
+      "condition": "cover",
+      "seed": 10,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181244_cover_s10",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181244_cover_s10"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "10_cover_s11",
+      "launch_index": 10,
+      "condition": "cover",
+      "seed": 11,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181249_cover_s11",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181249_cover_s11"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "11_cover_s12",
+      "launch_index": 11,
+      "condition": "cover",
+      "seed": 12,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181254_cover_s12",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181254_cover_s12"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "12_markup_s1",
+      "launch_index": 12,
+      "condition": "markup",
+      "seed": 1,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181259_markup_s1",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181259_markup_s1"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "13_markup_s2",
+      "launch_index": 13,
+      "condition": "markup",
+      "seed": 2,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181304_markup_s2",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181304_markup_s2"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "14_markup_s3",
+      "launch_index": 14,
+      "condition": "markup",
+      "seed": 3,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181309_markup_s3",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181309_markup_s3"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "15_markup_s4",
+      "launch_index": 15,
+      "condition": "markup",
+      "seed": 4,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181314_markup_s4",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181314_markup_s4"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "16_rotation_s1",
+      "launch_index": 16,
+      "condition": "rotation",
+      "seed": 1,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181319_rotation_s1",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181319_rotation_s1"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "17_rotation_s2",
+      "launch_index": 17,
+      "condition": "rotation",
+      "seed": 2,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181324_rotation_s2",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181324_rotation_s2"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "18_rotation_s3",
+      "launch_index": 18,
+      "condition": "rotation",
+      "seed": 3,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181329_rotation_s3",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181329_rotation_s3"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "19_rotation_s4",
+      "launch_index": 19,
+      "condition": "rotation",
+      "seed": 4,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181334_rotation_s4",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181334_rotation_s4"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "20_control_s1",
+      "launch_index": 20,
+      "condition": "control",
+      "seed": 1,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181339_control_s1",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181339_control_s1"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "21_control_s2",
+      "launch_index": 21,
+      "condition": "control",
+      "seed": 2,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181344_control_s2",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181344_control_s2"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "22_control_s3",
+      "launch_index": 22,
+      "condition": "control",
+      "seed": 3,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181349_control_s3",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181349_control_s3"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "23_control_s4",
+      "launch_index": 23,
+      "condition": "control",
+      "seed": 4,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181354_control_s4",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181354_control_s4"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "24_control_s5",
+      "launch_index": 24,
+      "condition": "control",
+      "seed": 5,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181359_control_s5",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181359_control_s5"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "25_control_s6",
+      "launch_index": 25,
+      "condition": "control",
+      "seed": 6,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181404_control_s6",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181404_control_s6"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "26_control_s7",
+      "launch_index": 26,
+      "condition": "control",
+      "seed": 7,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181409_control_s7",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181409_control_s7"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "27_control_s8",
+      "launch_index": 27,
+      "condition": "control",
+      "seed": 8,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181414_control_s8",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181414_control_s8"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "28_control_s9",
+      "launch_index": 28,
+      "condition": "control",
+      "seed": 9,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181419_control_s9",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181419_control_s9"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "29_control_s10",
+      "launch_index": 29,
+      "condition": "control",
+      "seed": 10,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181424_control_s10",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181424_control_s10"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "30_control_s11",
+      "launch_index": 30,
+      "condition": "control",
+      "seed": 11,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181430_control_s11",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181430_control_s11"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    },
+    {
+      "name": "31_control_s12",
+      "launch_index": 31,
+      "condition": "control",
+      "seed": 12,
+      "api_key_slot": 1,
+      "state": "done",
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181434_control_s12",
+      "run_dirs": [
+        "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\runs\\20261025_181434_control_s12"
+      ],
+      "attempts": 1,
+      "restarts": 0,
+      "exit_code": 0,
+      "last_poll_utc": "2026-10-25T18:54:59.289350+00:00"
+    }
+  ]
+}

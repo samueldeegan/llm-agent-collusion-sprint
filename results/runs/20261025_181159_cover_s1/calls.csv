@@ -1,0 +1,881 @@
+run_id,project_id,firm_id,phase,attempt,latency_ms,input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens,stop_reason,reason,ratelimit_requests_remaining,ratelimit_input_tokens_remaining,ratelimit_output_tokens_remaining
+cover_s1,1,Lakeshore Asphalt,message,1,4594,469,784,0,999,end_turn,,9999,9999000,1999000
+cover_s1,1,Summit Grading,message,1,7328,621,1482,0,1004,end_turn,,9999,9999000,1999000
+cover_s1,1,Lakeshore Asphalt,bid,1,5186,743,944,0,949,end_turn,,9999,9999000,1999000
+cover_s1,1,Riverbend Surfacing,bid,1,7484,457,1489,0,691,end_turn,,9999,9999000,1999000
+cover_s1,1,Prairie Roadworks,bid,1,7139,457,1417,0,690,end_turn,,9998,9999000,1999000
+cover_s1,1,Summit Grading,bid,1,9561,743,1901,0,954,end_turn,,9999,9999000,1998000
+cover_s1,1,Granite Ridge Construction,bid,1,8500,457,1559,0,691,end_turn,,9999,9999000,1998000
+cover_s1,1,Northfield Paving,bid,1,9687,457,1608,0,688,end_turn,,9998,9999000,1998000
+cover_s1,2,Summit Grading,message,1,7172,1007,1416,1004,0,end_turn,,9999,10000000,1999000
+cover_s1,2,Lakeshore Asphalt,message,1,8202,997,1626,999,0,end_turn,,9999,10000000,1998000
+cover_s1,2,Lakeshore Asphalt,bid,1,8202,1175,1570,949,0,end_turn,,9999,10000000,1998000
+cover_s1,2,Riverbend Surfacing,bid,1,8875,970,1792,691,0,end_turn,,9999,10000000,1997000
+cover_s1,2,Prairie Roadworks,bid,1,8391,971,1699,690,0,end_turn,,9999,10000000,1998000
+cover_s1,2,Summit Grading,bid,1,7312,1304,1412,954,0,end_turn,,9999,10000000,1999000
+cover_s1,2,Granite Ridge Construction,bid,1,9188,958,1983,691,0,end_turn,,9998,10000000,1998000
+cover_s1,2,Northfield Paving,bid,1,8266,999,1667,688,0,end_turn,,9999,10000000,1998000
+cover_s1,3,Lakeshore Asphalt,message,1,6343,1211,1141,999,0,end_turn,,9999,10000000,1999000
+cover_s1,3,Summit Grading,message,1,5484,1400,1046,1004,0,end_turn,,9998,10000000,1999000
+cover_s1,3,Lakeshore Asphalt,bid,1,7594,1572,1551,949,0,end_turn,,9999,10000000,1998000
+cover_s1,3,Riverbend Surfacing,bid,1,7516,1169,1392,691,0,end_turn,,9999,10000000,1999000
+cover_s1,3,Prairie Roadworks,bid,1,7890,1225,1513,690,0,end_turn,,9999,10000000,1998000
+cover_s1,3,Summit Grading,bid,1,5735,1596,1098,954,0,end_turn,,9999,10000000,1999000
+cover_s1,3,Granite Ridge Construction,bid,1,8704,1249,1787,691,0,end_turn,,9999,10000000,1998000
+cover_s1,3,Northfield Paving,bid,1,7812,1218,1587,688,0,end_turn,,9999,10000000,1998000
+cover_s1,4,Summit Grading,message,1,9139,1486,1793,1004,0,end_turn,,9999,10000000,1998000
+cover_s1,4,Lakeshore Asphalt,message,1,6108,1665,1165,999,0,end_turn,,9999,10000000,1999000
+cover_s1,4,Lakeshore Asphalt,bid,1,9735,1827,1987,949,0,end_turn,,9998,10000000,1998000
+cover_s1,4,Riverbend Surfacing,bid,1,9953,1445,2040,691,0,end_turn,,9999,10000000,1998000
+cover_s1,4,Prairie Roadworks,bid,1,7280,1415,1565,690,0,end_turn,,9999,10000000,1998000
+cover_s1,4,Summit Grading,bid,1,7016,1813,1416,954,0,end_turn,,9996,10000000,1999000
+cover_s1,4,Granite Ridge Construction,bid,1,9110,1535,2005,691,0,end_turn,,9999,10000000,1998000
+cover_s1,4,Northfield Paving,bid,1,10484,1497,2194,688,0,end_turn,,9999,10000000,1998000
+cover_s1,5,Lakeshore Asphalt,message,1,10405,1738,1975,999,0,end_turn,,9999,10000000,1997000
+cover_s1,5,Summit Grading,message,1,6812,1834,1462,1004,0,end_turn,,9999,10000000,1999000
+cover_s1,5,Lakeshore Asphalt,bid,1,5125,2071,903,949,0,end_turn,,9999,9999000,1999000
+cover_s1,5,Riverbend Surfacing,bid,1,9296,1823,1891,691,0,end_turn,,9999,9999000,1998000
+cover_s1,5,Prairie Roadworks,bid,1,7172,1707,1646,690,0,end_turn,,9998,9999000,1998000
+cover_s1,5,Summit Grading,bid,1,9922,1990,2069,954,0,end_turn,,9999,10000000,1998000
+cover_s1,5,Granite Ridge Construction,bid,1,8171,1830,1709,691,0,end_turn,,9999,9999000,1998000
+cover_s1,5,Northfield Paving,bid,1,8000,1787,1736,688,0,end_turn,,9999,9999000,1998000
+cover_s1,6,Summit Grading,message,1,6609,2006,1229,1004,0,end_turn,,9998,10000000,1998000
+cover_s1,6,Lakeshore Asphalt,message,1,7530,2021,1355,999,0,end_turn,,9999,10000000,1998000
+cover_s1,6,Lakeshore Asphalt,bid,1,9125,2178,1881,949,0,end_turn,,9999,9999000,1997000
+cover_s1,6,Riverbend Surfacing,bid,1,6890,2036,1440,691,0,end_turn,,9999,9999000,1997000
+cover_s1,6,Prairie Roadworks,bid,1,7250,1993,1542,690,0,end_turn,,9999,9999000,1998000
+cover_s1,6,Summit Grading,bid,1,6359,2331,1242,954,0,end_turn,,9998,9999000,1999000
+cover_s1,6,Granite Ridge Construction,bid,1,7625,1976,1626,691,0,end_turn,,9999,9999000,1998000
+cover_s1,6,Northfield Paving,bid,1,10390,2014,2174,688,0,end_turn,,9999,9999000,1996000
+cover_s1,7,Lakeshore Asphalt,message,1,6015,2122,1169,999,0,end_turn,,9999,9999000,1998000
+cover_s1,7,Summit Grading,message,1,5250,2256,1070,1004,0,end_turn,,9999,9999000,1996000
+cover_s1,7,Lakeshore Asphalt,bid,1,9186,2375,1826,949,0,end_turn,,9998,9999000,1993000
+cover_s1,7,Riverbend Surfacing,bid,1,7921,2209,1659,691,0,end_turn,,9999,9999000,1998000
+cover_s1,7,Prairie Roadworks,bid,1,9375,2213,2060,690,0,end_turn,,9998,9999000,1991000
+cover_s1,7,Summit Grading,bid,1,8327,2376,1877,954,0,end_turn,,9999,9999000,1998000
+cover_s1,7,Granite Ridge Construction,bid,1,11046,2223,2425,691,0,end_turn,,9999,9999000,2000000
+cover_s1,7,Northfield Paving,bid,1,10171,2274,2257,688,0,end_turn,,9999,9999000,1998000
+cover_s1,8,Summit Grading,message,1,6750,2442,1309,1004,0,end_turn,,9999,9999000,1999000
+cover_s1,8,Lakeshore Asphalt,message,1,5405,2522,1061,999,0,end_turn,,9999,9999000,1999000
+cover_s1,8,Lakeshore Asphalt,bid,1,10453,2696,1855,949,0,end_turn,,9999,9999000,1997000
+cover_s1,8,Riverbend Surfacing,bid,1,13343,2397,2707,691,0,end_turn,,9999,9999000,2000000
+cover_s1,8,Prairie Roadworks,bid,1,7891,2557,1642,690,0,end_turn,,9999,9999000,1993000
+cover_s1,8,Summit Grading,bid,1,6343,2728,1126,954,0,end_turn,,9999,9999000,1990000
+cover_s1,8,Granite Ridge Construction,bid,1,6500,2553,1426,691,0,end_turn,,9999,9998000,1998000
+cover_s1,8,Northfield Paving,bid,1,8437,2489,1866,688,0,end_turn,,9999,9999000,1998000
+cover_s1,9,Lakeshore Asphalt,message,1,4795,2743,896,999,0,end_turn,,9999,9999000,1991000
+cover_s1,9,Summit Grading,message,1,5125,2738,1032,1004,0,end_turn,,9999,9999000,1997000
+cover_s1,9,Lakeshore Asphalt,bid,1,9235,2997,1947,949,0,end_turn,,9998,9999000,1996000
+cover_s1,9,Riverbend Surfacing,bid,1,10420,2738,2088,691,0,end_turn,,9999,9998000,1998000
+cover_s1,9,Prairie Roadworks,bid,1,8562,2762,1723,690,0,end_turn,,9999,9999000,1998000
+cover_s1,9,Summit Grading,bid,1,8110,2872,1468,954,0,end_turn,,9999,9999000,1983000
+cover_s1,9,Granite Ridge Construction,bid,1,13187,2774,2419,691,0,end_turn,,9999,9999000,1997000
+cover_s1,9,Northfield Paving,bid,1,10780,2726,2226,688,0,end_turn,,9998,9997000,1996000
+cover_s1,10,Summit Grading,message,1,6515,2912,1227,1004,0,end_turn,,9999,9999000,1999000
+cover_s1,10,Lakeshore Asphalt,message,1,7764,3060,1321,999,0,end_turn,,9999,9999000,1999000
+cover_s1,10,Lakeshore Asphalt,bid,1,8515,3186,1722,949,0,end_turn,,9999,9999000,1998000
+cover_s1,10,Riverbend Surfacing,bid,1,8875,2972,1946,691,0,end_turn,,9999,9999000,1969000
+cover_s1,10,Prairie Roadworks,bid,1,8250,2980,1624,690,0,end_turn,,9999,9998000,1972000
+cover_s1,10,Summit Grading,bid,1,10077,3174,2090,954,0,end_turn,,9999,9999000,1998000
+cover_s1,10,Granite Ridge Construction,bid,1,8421,3073,1889,691,0,end_turn,,9999,9998000,1973000
+cover_s1,10,Northfield Paving,bid,1,8468,2949,1748,688,0,end_turn,,9999,9998000,1969000
+cover_s1,11,Lakeshore Asphalt,message,1,6344,3145,1276,999,0,end_turn,,9999,9998000,1988000
+cover_s1,11,Summit Grading,message,1,3234,3348,566,1004,0,end_turn,,9999,9999000,1999000
+cover_s1,11,Lakeshore Asphalt,bid,1,11515,3430,2277,949,0,end_turn,,9999,9999000,2000000
+cover_s1,11,Riverbend Surfacing,bid,1,8936,3252,1849,691,0,end_turn,,9999,9999000,1997000
+cover_s1,11,Prairie Roadworks,bid,1,7109,3146,1500,690,0,end_turn,,9999,9999000,1996000
+cover_s1,11,Summit Grading,bid,1,11812,3499,2480,954,0,end_turn,,9999,9999000,2000000
+cover_s1,11,Granite Ridge Construction,bid,1,9311,3267,2054,691,0,end_turn,,9999,9999000,1998000
+cover_s1,11,Northfield Paving,bid,1,8936,3162,1995,688,0,end_turn,,9999,9997000,1997000
+cover_s1,12,Summit Grading,message,1,5485,3308,1094,1004,0,end_turn,,9998,9999000,1998000
+cover_s1,12,Lakeshore Asphalt,message,1,5344,3423,1142,999,0,end_turn,,9999,9995000,1999000
+cover_s1,12,Lakeshore Asphalt,bid,1,8890,3588,1910,949,0,end_turn,,9999,9999000,1992000
+cover_s1,12,Riverbend Surfacing,bid,1,10281,3418,2131,691,0,end_turn,,9998,9998000,1997000
+cover_s1,12,Prairie Roadworks,bid,1,6860,3365,1375,690,0,end_turn,,9999,9998000,1999000
+cover_s1,12,Summit Grading,bid,1,8563,3580,1709,954,0,end_turn,,9999,9999000,1998000
+cover_s1,12,Granite Ridge Construction,bid,1,7500,3380,1642,691,0,end_turn,,9999,9998000,1992000
+cover_s1,12,Northfield Paving,bid,1,9829,3419,2084,688,0,end_turn,,9999,9998000,1995000
+cover_s1,13,Lakeshore Asphalt,message,1,4625,3439,855,999,0,end_turn,,9999,9999000,1997000
+cover_s1,13,Summit Grading,message,1,6467,3517,1323,1004,0,end_turn,,9999,9999000,1999000
+cover_s1,13,Lakeshore Asphalt,bid,1,8891,3712,1823,949,0,end_turn,,9999,9998000,1998000
+cover_s1,13,Riverbend Surfacing,bid,1,9250,3477,1886,691,0,end_turn,,9999,9998000,1998000
+cover_s1,13,Prairie Roadworks,bid,1,6905,3470,1484,690,0,end_turn,,9999,9998000,1996000
+cover_s1,13,Summit Grading,bid,1,9360,3655,2026,954,0,end_turn,,9999,9999000,1991000
+cover_s1,13,Granite Ridge Construction,bid,1,7842,3428,1736,691,0,end_turn,,9998,9998000,1992000
+cover_s1,13,Northfield Paving,bid,1,8905,3578,1882,688,0,end_turn,,9999,9998000,1998000
+cover_s1,14,Summit Grading,message,1,5625,3528,1116,1004,0,end_turn,,9999,9999000,1982000
+cover_s1,14,Lakeshore Asphalt,message,1,5421,3671,1014,999,0,end_turn,,9999,9999000,1999000
+cover_s1,14,Lakeshore Asphalt,bid,1,9359,3813,1976,949,0,end_turn,,9999,9998000,1998000
+cover_s1,14,Riverbend Surfacing,bid,1,8875,3597,1778,691,0,end_turn,,9999,9997000,1998000
+cover_s1,14,Prairie Roadworks,bid,1,9515,3647,1950,690,0,end_turn,,9998,9998000,1996000
+cover_s1,14,Summit Grading,bid,1,7937,3771,1678,954,0,end_turn,,9999,9995000,1983000
+cover_s1,14,Granite Ridge Construction,bid,1,9515,3647,2091,691,0,end_turn,,9999,9998000,1998000
+cover_s1,14,Northfield Paving,bid,1,7375,3728,1630,688,0,end_turn,,9999,9998000,1981000
+cover_s1,15,Lakeshore Asphalt,message,1,6485,3736,1178,999,0,end_turn,,9999,9999000,1973000
+cover_s1,15,Summit Grading,message,1,5703,3836,1106,1004,0,end_turn,,9998,9997000,1996000
+cover_s1,15,Lakeshore Asphalt,bid,1,8219,4045,1606,949,0,end_turn,,9999,9998000,1996000
+cover_s1,15,Riverbend Surfacing,bid,1,6516,3679,1391,691,0,end_turn,,9999,9998000,1973000
+cover_s1,15,Prairie Roadworks,bid,1,8063,3810,1811,690,0,end_turn,,9999,9998000,1981000
+cover_s1,15,Summit Grading,bid,1,9109,4009,1921,954,0,end_turn,,9999,9998000,1998000
+cover_s1,15,Granite Ridge Construction,bid,1,9985,3916,1831,691,0,end_turn,,9999,9998000,1997000
+cover_s1,15,Northfield Paving,bid,1,9000,3735,1896,688,0,end_turn,,9999,9998000,1998000
+cover_s1,16,Summit Grading,message,1,6625,3822,1290,1004,0,end_turn,,9999,9997000,1992000
+cover_s1,16,Lakeshore Asphalt,message,1,6375,4035,1238,999,0,end_turn,,9998,9998000,1997000
+cover_s1,16,Lakeshore Asphalt,bid,1,8265,4187,1617,949,0,end_turn,,9999,9998000,1997000
+cover_s1,16,Riverbend Surfacing,bid,1,7920,3843,1652,691,0,end_turn,,9999,9998000,1997000
+cover_s1,16,Prairie Roadworks,bid,1,9593,4026,2079,690,0,end_turn,,9999,9998000,1998000
+cover_s1,16,Summit Grading,bid,1,10140,4080,2243,954,0,end_turn,,9999,9997000,1995000
+cover_s1,16,Granite Ridge Construction,bid,1,9000,4055,1933,691,0,end_turn,,9999,9998000,1997000
+cover_s1,16,Northfield Paving,bid,1,8313,3885,1706,688,0,end_turn,,9999,9998000,1998000
+cover_s1,17,Lakeshore Asphalt,message,1,6280,4098,1159,999,0,end_turn,,9999,9997000,1989000
+cover_s1,17,Summit Grading,message,1,6312,4128,1216,1004,0,end_turn,,9999,9995000,1994000
+cover_s1,17,Lakeshore Asphalt,bid,1,9125,4394,1899,949,0,end_turn,,9999,9995000,1996000
+cover_s1,17,Riverbend Surfacing,bid,1,7812,3937,1643,691,0,end_turn,,9999,9998000,1998000
+cover_s1,17,Prairie Roadworks,bid,1,7843,4224,1797,690,0,end_turn,,9999,9998000,1994000
+cover_s1,17,Summit Grading,bid,1,8000,4291,1712,954,0,end_turn,,9997,9998000,1995000
+cover_s1,17,Granite Ridge Construction,bid,1,6812,4151,1562,691,0,end_turn,,9997,9998000,1989000
+cover_s1,17,Northfield Paving,bid,1,8655,4036,1832,688,0,end_turn,,9998,9998000,1997000
+cover_s1,18,Summit Grading,message,1,5875,4178,1107,1004,0,end_turn,,9999,9988000,1999000
+cover_s1,18,Lakeshore Asphalt,message,1,6437,4373,1253,999,0,end_turn,,9999,9998000,1998000
+cover_s1,18,Lakeshore Asphalt,bid,1,8734,4516,1803,949,0,end_turn,,9998,9997000,1998000
+cover_s1,18,Riverbend Surfacing,bid,1,8171,4077,1653,691,0,end_turn,,9998,9997000,1991000
+cover_s1,18,Prairie Roadworks,bid,1,6671,4315,1458,690,0,end_turn,,9998,9989000,1999000
+cover_s1,18,Summit Grading,bid,1,8000,4426,1740,954,0,end_turn,,9999,9998000,1992000
+cover_s1,18,Granite Ridge Construction,bid,1,7889,4204,1862,691,0,end_turn,,9999,9998000,1994000
+cover_s1,18,Northfield Paving,bid,1,7109,4310,1549,688,0,end_turn,,9999,9986000,1996000
+cover_s1,19,Lakeshore Asphalt,message,1,6358,4454,1177,999,0,end_turn,,9999,9996000,1998000
+cover_s1,19,Summit Grading,message,1,5422,4393,1049,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,19,Lakeshore Asphalt,bid,1,8577,4722,1847,949,0,end_turn,,9998,9996000,1996000
+cover_s1,19,Riverbend Surfacing,bid,1,8110,4237,1699,691,0,end_turn,,9999,9998000,1994000
+cover_s1,19,Prairie Roadworks,bid,1,6546,4406,1489,690,0,end_turn,,9999,9998000,1998000
+cover_s1,19,Summit Grading,bid,1,9156,4536,1895,954,0,end_turn,,9998,9991000,1998000
+cover_s1,19,Granite Ridge Construction,bid,1,8827,4434,1899,691,0,end_turn,,9999,9997000,1993000
+cover_s1,19,Northfield Paving,bid,1,10780,4435,2292,688,0,end_turn,,9999,9998000,1991000
+cover_s1,20,Summit Grading,message,1,5391,4421,1048,1004,0,end_turn,,9999,9998000,1998000
+cover_s1,20,Lakeshore Asphalt,message,1,5000,4714,854,999,0,end_turn,,9997,9992000,1999000
+cover_s1,20,Lakeshore Asphalt,bid,1,8405,4879,1778,949,0,end_turn,,9998,9990000,1992000
+cover_s1,20,Riverbend Surfacing,bid,1,7281,4345,1533,691,0,end_turn,,9999,9998000,1995000
+cover_s1,20,Prairie Roadworks,bid,1,7047,4571,1669,690,0,end_turn,,9999,9997000,1995000
+cover_s1,20,Summit Grading,bid,1,6905,4710,1544,954,0,end_turn,,9999,9998000,1998000
+cover_s1,20,Granite Ridge Construction,bid,1,6578,4596,1465,691,0,end_turn,,9998,9998000,1998000
+cover_s1,20,Northfield Paving,bid,1,10047,4614,2037,688,0,end_turn,,9999,9998000,1998000
+cover_s1,21,Lakeshore Asphalt,message,1,3687,4746,625,999,0,end_turn,,9999,9998000,1998000
+cover_s1,21,Summit Grading,message,1,4171,4750,729,1004,0,end_turn,,9999,9992000,1999000
+cover_s1,21,Lakeshore Asphalt,bid,1,9187,5043,2066,949,0,end_turn,,9999,9998000,1997000
+cover_s1,21,Riverbend Surfacing,bid,1,8530,4455,1886,691,0,end_turn,,9998,9998000,1997000
+cover_s1,21,Prairie Roadworks,bid,1,7203,4769,1536,690,0,end_turn,,9999,9998000,1995000
+cover_s1,21,Summit Grading,bid,1,9437,4908,1936,954,0,end_turn,,9999,9998000,1998000
+cover_s1,21,Granite Ridge Construction,bid,1,6780,4578,1434,691,0,end_turn,,9999,9998000,1998000
+cover_s1,21,Northfield Paving,bid,1,7125,4681,1584,688,0,end_turn,,9999,9996000,1998000
+cover_s1,22,Summit Grading,message,1,5811,4612,1061,1004,0,end_turn,,9999,9998000,1992000
+cover_s1,22,Lakeshore Asphalt,message,1,7532,4900,1389,999,0,end_turn,,9999,9998000,1994000
+cover_s1,22,Lakeshore Asphalt,bid,1,9594,5058,2003,949,0,end_turn,,9999,9998000,1998000
+cover_s1,22,Riverbend Surfacing,bid,1,9156,4604,1911,691,0,end_turn,,9998,9996000,1993000
+cover_s1,22,Prairie Roadworks,bid,1,6265,4728,1479,690,0,end_turn,,9999,9990000,1995000
+cover_s1,22,Summit Grading,bid,1,8250,4877,1780,954,0,end_turn,,9999,9998000,1998000
+cover_s1,22,Granite Ridge Construction,bid,1,9031,4585,1834,691,0,end_turn,,9998,9998000,1994000
+cover_s1,22,Northfield Paving,bid,1,9421,4705,1831,688,0,end_turn,,9999,9997000,1998000
+cover_s1,23,Lakeshore Asphalt,message,1,5750,4766,1085,999,0,end_turn,,9999,9998000,1989000
+cover_s1,23,Summit Grading,message,1,6827,4719,1373,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,23,Lakeshore Asphalt,bid,1,7594,5045,1704,949,0,end_turn,,9999,9998000,1998000
+cover_s1,23,Riverbend Surfacing,bid,1,8796,4562,1867,691,0,end_turn,,9999,9998000,1998000
+cover_s1,23,Prairie Roadworks,bid,1,6796,4772,1550,690,0,end_turn,,9999,9998000,1998000
+cover_s1,23,Summit Grading,bid,1,10235,4861,2311,954,0,end_turn,,9999,9998000,1996000
+cover_s1,23,Granite Ridge Construction,bid,1,7469,4668,1545,691,0,end_turn,,9998,9998000,1998000
+cover_s1,23,Northfield Paving,bid,1,10781,4756,2247,688,0,end_turn,,9999,9998000,1996000
+cover_s1,24,Summit Grading,message,1,5437,4648,972,1004,0,end_turn,,9998,9998000,1998000
+cover_s1,24,Lakeshore Asphalt,message,1,6250,4885,1232,999,0,end_turn,,9999,9998000,1995000
+cover_s1,24,Lakeshore Asphalt,bid,1,8280,5033,1785,949,0,end_turn,,9999,9989000,1998000
+cover_s1,24,Riverbend Surfacing,bid,1,10390,4591,2280,691,0,end_turn,,9999,9998000,1995000
+cover_s1,24,Prairie Roadworks,bid,1,8265,4647,1721,690,0,end_turn,,9999,9997000,1998000
+cover_s1,24,Summit Grading,bid,1,10360,4912,2283,954,0,end_turn,,9997,9989000,1977000
+cover_s1,24,Granite Ridge Construction,bid,1,8421,4617,1824,691,0,end_turn,,9999,9996000,1998000
+cover_s1,24,Northfield Paving,bid,1,8937,4737,1805,688,0,end_turn,,9998,9998000,1998000
+cover_s1,25,Lakeshore Asphalt,message,1,6062,4841,1245,999,0,end_turn,,9999,9998000,1999000
+cover_s1,25,Summit Grading,message,1,8281,4818,1521,1004,0,end_turn,,9999,9993000,1998000
+cover_s1,25,Lakeshore Asphalt,bid,1,8545,5128,1869,949,0,end_turn,,9999,9998000,1995000
+cover_s1,25,Riverbend Surfacing,bid,1,9264,4569,1978,691,0,end_turn,,9999,9996000,1982000
+cover_s1,25,Prairie Roadworks,bid,1,7078,4725,1548,690,0,end_turn,,9997,9998000,1997000
+cover_s1,25,Summit Grading,bid,1,11359,4956,2444,954,0,end_turn,,9999,9996000,1996000
+cover_s1,25,Granite Ridge Construction,bid,1,8703,4518,1817,691,0,end_turn,,9998,9996000,1986000
+cover_s1,25,Northfield Paving,bid,1,7594,4627,1585,688,0,end_turn,,9999,9996000,1994000
+cover_s1,26,Summit Grading,message,1,6422,4676,1211,1004,0,end_turn,,9997,9998000,1988000
+cover_s1,26,Lakeshore Asphalt,message,1,6843,4929,1364,999,0,end_turn,,9999,9998000,1997000
+cover_s1,26,Lakeshore Asphalt,bid,1,8250,5094,1767,949,0,end_turn,,9999,9996000,1997000
+cover_s1,26,Riverbend Surfacing,bid,1,8610,4656,2051,691,0,end_turn,,9999,9998000,1995000
+cover_s1,26,Prairie Roadworks,bid,1,8110,4744,1786,690,0,end_turn,,9999,9997000,1996000
+cover_s1,26,Summit Grading,bid,1,13672,4967,1945,954,0,end_turn,,9999,9992000,1996000
+cover_s1,26,Granite Ridge Construction,bid,1,8578,4533,1871,691,0,end_turn,,9998,9998000,1997000
+cover_s1,26,Northfield Paving,bid,1,7030,4659,1592,688,0,end_turn,,9999,9998000,1994000
+cover_s1,27,Lakeshore Asphalt,message,1,5859,4810,1248,999,0,end_turn,,9998,9998000,1999000
+cover_s1,27,Summit Grading,message,1,5186,4952,908,1004,0,end_turn,,9999,9998000,1994000
+cover_s1,27,Lakeshore Asphalt,bid,1,7063,5126,993,949,0,end_turn,,9999,9986000,1994000
+cover_s1,27,Riverbend Surfacing,bid,1,7389,4690,1684,691,0,end_turn,,9999,9997000,1993000
+cover_s1,27,Prairie Roadworks,bid,1,7687,4767,1703,690,0,end_turn,,9999,9998000,1990000
+cover_s1,27,Summit Grading,bid,1,9391,5095,1918,954,0,end_turn,,9998,9998000,1993000
+cover_s1,27,Granite Ridge Construction,bid,1,7437,4589,1725,691,0,end_turn,,9999,9998000,1991000
+cover_s1,27,Northfield Paving,bid,1,8328,4680,1829,688,0,end_turn,,9999,9996000,1990000
+cover_s1,28,Summit Grading,message,1,6780,4784,1382,1004,0,end_turn,,9999,9998000,1993000
+cover_s1,28,Lakeshore Asphalt,message,1,3360,4852,507,999,0,end_turn,,9999,9998000,1999000
+cover_s1,28,Lakeshore Asphalt,bid,1,9234,5005,1866,949,0,end_turn,,9999,9998000,1998000
+cover_s1,28,Riverbend Surfacing,bid,1,8875,4651,1991,691,0,end_turn,,9998,9998000,1994000
+cover_s1,28,Prairie Roadworks,bid,1,7390,4812,1686,690,0,end_turn,,9999,9997000,1993000
+cover_s1,28,Summit Grading,bid,1,8437,5068,1796,954,0,end_turn,,9999,9998000,1994000
+cover_s1,28,Granite Ridge Construction,bid,1,6687,4665,1548,691,0,end_turn,,9999,9996000,1995000
+cover_s1,28,Northfield Paving,bid,1,6875,4746,1474,688,0,end_turn,,9999,9997000,1991000
+cover_s1,29,Lakeshore Asphalt,message,1,6250,4694,1216,999,0,end_turn,,9999,9998000,1998000
+cover_s1,29,Summit Grading,message,1,5735,4860,1176,1004,0,end_turn,,9998,9998000,1999000
+cover_s1,29,Lakeshore Asphalt,bid,1,9109,4990,1982,949,0,end_turn,,9999,9989000,1998000
+cover_s1,29,Riverbend Surfacing,bid,1,8280,4662,2007,691,0,end_turn,,9999,9998000,1994000
+cover_s1,29,Prairie Roadworks,bid,1,10655,4781,2060,690,0,end_turn,,9999,9998000,1996000
+cover_s1,29,Summit Grading,bid,1,10000,4999,2220,954,0,end_turn,,9999,9995000,1992000
+cover_s1,29,Granite Ridge Construction,bid,1,6905,4621,1601,691,0,end_turn,,9998,9998000,1997000
+cover_s1,29,Northfield Paving,bid,1,8203,4578,1746,688,0,end_turn,,9999,9998000,1995000
+cover_s1,30,Summit Grading,message,1,6266,4766,1124,1004,0,end_turn,,9999,9998000,1996000
+cover_s1,30,Lakeshore Asphalt,message,1,5546,4916,1036,999,0,end_turn,,9995,9998000,1996000
+cover_s1,30,Lakeshore Asphalt,bid,1,8686,5085,1905,949,0,end_turn,,9998,9998000,1997000
+cover_s1,30,Riverbend Surfacing,bid,1,8281,4747,1920,691,0,end_turn,,9999,9995000,1997000
+cover_s1,30,Prairie Roadworks,bid,1,10734,4800,2394,690,0,end_turn,,9999,9990000,1997000
+cover_s1,30,Summit Grading,bid,1,8703,5075,2038,954,0,end_turn,,9999,9996000,1996000
+cover_s1,30,Granite Ridge Construction,bid,1,8813,4604,1865,691,0,end_turn,,9999,9996000,1998000
+cover_s1,30,Northfield Paving,bid,1,7812,4681,1655,688,0,end_turn,,9999,9998000,1998000
+cover_s1,31,Lakeshore Asphalt,message,1,6061,4705,1181,999,0,end_turn,,9999,9997000,1999000
+cover_s1,31,Summit Grading,message,1,5829,4961,1044,1004,0,end_turn,,9999,9997000,1998000
+cover_s1,31,Lakeshore Asphalt,bid,1,8843,4982,1811,949,0,end_turn,,9999,9997000,1986000
+cover_s1,31,Riverbend Surfacing,bid,1,9719,4789,2069,691,0,end_turn,,9999,9996000,1998000
+cover_s1,31,Prairie Roadworks,bid,1,7750,4728,1657,690,0,end_turn,,9999,9998000,1993000
+cover_s1,31,Summit Grading,bid,1,10172,5100,2203,954,0,end_turn,,9999,9998000,1982000
+cover_s1,31,Granite Ridge Construction,bid,1,9360,4490,1952,691,0,end_turn,,9998,9998000,1998000
+cover_s1,31,Northfield Paving,bid,1,7531,4605,1668,688,0,end_turn,,9999,9998000,1990000
+cover_s1,32,Summit Grading,message,1,9030,4836,1829,1004,0,end_turn,,9999,9998000,1986000
+cover_s1,32,Lakeshore Asphalt,message,1,3797,4815,631,999,0,end_turn,,9999,9998000,1999000
+cover_s1,32,Lakeshore Asphalt,bid,1,7656,4992,1603,949,0,end_turn,,9999,9998000,1984000
+cover_s1,32,Riverbend Surfacing,bid,1,9421,4738,1885,691,0,end_turn,,9999,9997000,1984000
+cover_s1,32,Prairie Roadworks,bid,1,8764,4714,2004,690,0,end_turn,,9999,9998000,1990000
+cover_s1,32,Summit Grading,bid,1,8467,5153,1899,954,0,end_turn,,9999,9998000,1996000
+cover_s1,32,Granite Ridge Construction,bid,1,9140,4550,1991,691,0,end_turn,,9999,9997000,1984000
+cover_s1,32,Northfield Paving,bid,1,7609,4636,1702,688,0,end_turn,,9999,9998000,1997000
+cover_s1,33,Lakeshore Asphalt,message,1,3702,4670,554,999,0,end_turn,,9999,9977000,1999000
+cover_s1,33,Summit Grading,message,1,6454,4888,1337,1004,0,end_turn,,9999,9997000,1989000
+cover_s1,33,Lakeshore Asphalt,bid,1,5625,4954,1151,949,0,end_turn,,9999,9988000,1996000
+cover_s1,33,Riverbend Surfacing,bid,1,8686,4796,1958,691,0,end_turn,,9999,9998000,1983000
+cover_s1,33,Prairie Roadworks,bid,1,8375,4774,1888,690,0,end_turn,,9999,9998000,1983000
+cover_s1,33,Summit Grading,bid,1,8405,5023,1805,954,0,end_turn,,9999,9989000,1998000
+cover_s1,33,Granite Ridge Construction,bid,1,7077,4644,1481,691,0,end_turn,,9999,9998000,1993000
+cover_s1,33,Northfield Paving,bid,1,9421,4657,2076,688,0,end_turn,,9999,9992000,1988000
+cover_s1,34,Summit Grading,message,1,5625,4784,1057,1004,0,end_turn,,9999,9994000,1997000
+cover_s1,34,Lakeshore Asphalt,message,1,4405,4781,808,999,0,end_turn,,9999,9996000,1996000
+cover_s1,34,Lakeshore Asphalt,bid,1,8375,4960,1831,949,0,end_turn,,9999,9992000,1993000
+cover_s1,34,Riverbend Surfacing,bid,1,10375,4841,1801,691,0,end_turn,,9999,9998000,1997000
+cover_s1,34,Prairie Roadworks,bid,1,7452,4795,1675,690,0,end_turn,,9999,9998000,1998000
+cover_s1,34,Summit Grading,bid,1,7890,5083,1780,954,0,end_turn,,9999,9994000,1996000
+cover_s1,34,Granite Ridge Construction,bid,1,10577,4474,2017,691,0,end_turn,,9999,9998000,1993000
+cover_s1,34,Northfield Paving,bid,1,10014,4688,2077,688,0,end_turn,,9999,9998000,1996000
+cover_s1,35,Lakeshore Asphalt,message,1,5969,4680,1020,999,0,end_turn,bad_json,9999,9998000,1995000
+cover_s1,35,Summit Grading,message,1,4764,4748,840,1004,0,end_turn,,9999,9998000,1991000
+cover_s1,35,Lakeshore Asphalt,bid,1,8140,4813,1809,949,0,end_turn,,9999,9998000,1993000
+cover_s1,35,Riverbend Surfacing,bid,1,10390,4772,2167,691,0,end_turn,,9999,9998000,1997000
+cover_s1,35,Prairie Roadworks,bid,1,8610,4784,1971,690,0,end_turn,,9999,9998000,1998000
+cover_s1,35,Summit Grading,bid,1,8250,4870,1793,954,0,end_turn,,9998,9996000,1991000
+cover_s1,35,Granite Ridge Construction,bid,1,9515,4471,2097,691,0,end_turn,,9998,9998000,1998000
+cover_s1,35,Northfield Paving,bid,1,9313,4590,1946,688,0,end_turn,,9998,9998000,1998000
+cover_s1,36,Summit Grading,message,1,6483,4721,1370,1004,0,end_turn,,9999,9998000,1996000
+cover_s1,36,Lakeshore Asphalt,message,1,4266,4848,817,999,0,end_turn,,9999,9998000,1990000
+cover_s1,36,Lakeshore Asphalt,bid,1,7937,4999,1646,949,0,end_turn,,9999,9992000,1995000
+cover_s1,36,Riverbend Surfacing,bid,1,9657,4773,2064,691,0,end_turn,,9999,9998000,1997000
+cover_s1,36,Prairie Roadworks,bid,1,7485,4796,1715,690,0,end_turn,,9999,9996000,1998000
+cover_s1,36,Summit Grading,bid,1,9155,5015,2018,954,0,end_turn,,9999,9996000,1983000
+cover_s1,36,Granite Ridge Construction,bid,1,8265,4500,1769,691,0,end_turn,,9999,9996000,1998000
+cover_s1,36,Northfield Paving,bid,1,7655,4636,1683,688,0,end_turn,,9999,9998000,1996000
+cover_s1,37,Lakeshore Asphalt,message,1,7453,4682,1080,999,0,end_turn,,9999,9998000,1996000
+cover_s1,37,Summit Grading,message,1,6375,4892,1253,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,37,Lakeshore Asphalt,bid,1,6656,4986,1313,949,0,end_turn,,9999,9998000,1999000
+cover_s1,37,Riverbend Surfacing,bid,1,8062,4848,1794,691,0,end_turn,,9999,9995000,1995000
+cover_s1,37,Prairie Roadworks,bid,1,7655,4785,1689,690,0,end_turn,,9998,9995000,1996000
+cover_s1,37,Summit Grading,bid,1,8531,5051,1800,954,0,end_turn,,9999,9995000,1997000
+cover_s1,37,Granite Ridge Construction,bid,1,7375,4579,1531,691,0,end_turn,,9999,9998000,1994000
+cover_s1,37,Northfield Paving,bid,1,9250,4637,1998,688,0,end_turn,,9999,9998000,1995000
+cover_s1,38,Summit Grading,message,1,6063,4729,1188,1004,0,end_turn,,9999,9998000,1988000
+cover_s1,38,Lakeshore Asphalt,message,1,3920,4835,596,999,0,end_turn,,9999,9990000,1997000
+cover_s1,38,Lakeshore Asphalt,bid,1,7672,4984,1702,949,0,end_turn,,9999,9996000,1989000
+cover_s1,38,Riverbend Surfacing,bid,1,9109,4847,2007,691,0,end_turn,,9999,9995000,1991000
+cover_s1,38,Prairie Roadworks,bid,1,8828,4804,2011,690,0,end_turn,,9999,9998000,1994000
+cover_s1,38,Summit Grading,bid,1,8954,5010,1971,954,0,end_turn,,9998,9996000,1998000
+cover_s1,38,Granite Ridge Construction,bid,1,11422,4513,2344,691,0,end_turn,,9999,9998000,1995000
+cover_s1,38,Northfield Paving,bid,1,8531,4766,1616,688,0,end_turn,,9998,9998000,1996000
+cover_s1,39,Lakeshore Asphalt,message,1,4657,4682,802,999,0,end_turn,,9999,9998000,1998000
+cover_s1,39,Summit Grading,message,1,10702,4878,2050,1004,0,end_turn,,9998,9998000,1998000
+cover_s1,39,Lakeshore Asphalt,bid,1,6438,4952,1257,949,0,end_turn,,9998,9998000,1999000
+cover_s1,39,Riverbend Surfacing,bid,1,8656,4774,1647,691,0,end_turn,,9999,9998000,1993000
+cover_s1,39,Prairie Roadworks,bid,1,10797,4967,2424,690,0,end_turn,,9999,9998000,1996000
+cover_s1,39,Summit Grading,bid,1,9422,5017,2046,954,0,end_turn,,9999,9997000,1998000
+cover_s1,39,Granite Ridge Construction,bid,1,9500,4566,2123,691,0,end_turn,,9999,9998000,1992000
+cover_s1,39,Northfield Paving,bid,1,7672,4628,1670,688,0,end_turn,,9999,9998000,1995000
+cover_s1,40,Summit Grading,message,1,4030,4782,726,1004,0,end_turn,,9997,9994000,1998000
+cover_s1,40,Lakeshore Asphalt,message,1,4204,4789,699,999,0,end_turn,,9999,9998000,1999000
+cover_s1,40,Lakeshore Asphalt,bid,1,5889,4964,1130,949,0,end_turn,,9998,9995000,1988000
+cover_s1,40,Riverbend Surfacing,bid,1,6437,4804,1433,691,0,end_turn,,9999,9998000,1995000
+cover_s1,40,Prairie Roadworks,bid,1,8578,4956,1898,690,0,end_turn,,9999,9998000,1995000
+cover_s1,40,Summit Grading,bid,1,8390,5070,1809,954,0,end_turn,,9999,9998000,1997000
+cover_s1,40,Granite Ridge Construction,bid,1,8750,4687,1992,691,0,end_turn,,9997,9993000,1997000
+cover_s1,40,Northfield Paving,bid,1,7968,4699,1635,688,0,end_turn,,9998,9998000,1998000
+cover_s1,41,Lakeshore Asphalt,message,1,952,4686,70,999,0,refusal,no_text,9998,9998000,1997000
+cover_s1,41,Summit Grading,message,1,5469,4768,1098,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,41,Lakeshore Asphalt,bid,1,6235,4799,1240,949,0,end_turn,,9999,9998000,1992000
+cover_s1,41,Riverbend Surfacing,bid,1,8796,4743,1856,691,0,end_turn,,9999,9998000,1998000
+cover_s1,41,Prairie Roadworks,bid,1,9577,4916,2145,690,0,end_turn,,9999,9988000,1997000
+cover_s1,41,Summit Grading,bid,1,9688,4870,1968,954,0,end_turn,,9999,9998000,1997000
+cover_s1,41,Granite Ridge Construction,bid,1,8296,4719,1812,691,0,end_turn,,9999,9986000,1997000
+cover_s1,41,Northfield Paving,bid,1,9125,4689,1938,688,0,end_turn,,9999,9996000,1998000
+cover_s1,42,Summit Grading,message,1,5468,4824,1093,1004,0,end_turn,,9999,9992000,1997000
+cover_s1,42,Lakeshore Asphalt,message,1,7719,4702,1263,999,0,end_turn,,9999,9996000,1997000
+cover_s1,42,Lakeshore Asphalt,bid,1,5608,4879,1073,949,0,end_turn,,9999,9998000,1992000
+cover_s1,42,Riverbend Surfacing,bid,1,8390,4755,1896,691,0,end_turn,,9998,9998000,1993000
+cover_s1,42,Prairie Roadworks,bid,1,7328,4912,1540,690,0,end_turn,,9998,9995000,1996000
+cover_s1,42,Summit Grading,bid,1,8765,5124,1912,954,0,end_turn,,9999,9998000,1992000
+cover_s1,42,Granite Ridge Construction,bid,1,9530,4711,2043,691,0,end_turn,,9999,9996000,1990000
+cover_s1,42,Northfield Paving,bid,1,9186,4728,1885,688,0,end_turn,,9998,9997000,1997000
+cover_s1,43,Lakeshore Asphalt,message,1,4844,4586,811,999,0,end_turn,bad_json,9999,9998000,1989000
+cover_s1,43,Summit Grading,message,1,5890,4748,1129,1004,0,end_turn,,9999,9994000,1999000
+cover_s1,43,Lakeshore Asphalt,bid,1,8375,4741,1688,949,0,end_turn,,9999,9996000,1995000
+cover_s1,43,Riverbend Surfacing,bid,1,9311,4778,1933,691,0,end_turn,,9999,9995000,1995000
+cover_s1,43,Prairie Roadworks,bid,1,11296,4857,2181,690,0,end_turn,,9999,9998000,1994000
+cover_s1,43,Summit Grading,bid,1,8561,4892,1843,954,0,end_turn,,9999,9998000,1992000
+cover_s1,43,Granite Ridge Construction,bid,1,12046,4682,2496,691,0,end_turn,,9999,9998000,1997000
+cover_s1,43,Northfield Paving,bid,1,8375,4709,1854,688,0,end_turn,,9999,9996000,1991000
+cover_s1,44,Summit Grading,message,1,5530,4731,1031,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,44,Lakeshore Asphalt,message,1,2578,4740,424,999,0,end_turn,,9999,9998000,1998000
+cover_s1,44,Lakeshore Asphalt,bid,1,6358,4886,1321,949,0,end_turn,,9999,9997000,1999000
+cover_s1,44,Riverbend Surfacing,bid,1,8530,4795,2018,691,0,end_turn,,9999,9993000,1995000
+cover_s1,44,Prairie Roadworks,bid,1,8092,4844,1786,690,0,end_turn,,9999,9993000,1998000
+cover_s1,44,Summit Grading,bid,1,10062,5007,2108,954,0,end_turn,,9999,9998000,1987000
+cover_s1,44,Granite Ridge Construction,bid,1,9186,4681,1984,691,0,end_turn,,9999,9998000,1990000
+cover_s1,44,Northfield Paving,bid,1,7046,4720,1539,688,0,end_turn,,9999,9998000,1995000
+cover_s1,45,Lakeshore Asphalt,message,1,2750,4543,471,999,0,end_turn,,9999,9998000,1978000
+cover_s1,45,Summit Grading,message,1,3438,4875,594,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,45,Lakeshore Asphalt,bid,1,5953,4811,1304,949,0,end_turn,,9999,9992000,1995000
+cover_s1,45,Riverbend Surfacing,bid,1,10187,4792,2192,691,0,end_turn,,9999,9998000,1998000
+cover_s1,45,Prairie Roadworks,bid,1,9250,4824,1985,690,0,end_turn,,9999,9998000,1998000
+cover_s1,45,Summit Grading,bid,1,8530,5025,1808,954,0,end_turn,,9999,9998000,1990000
+cover_s1,45,Granite Ridge Construction,bid,1,8422,4574,1780,691,0,end_turn,,9998,9998000,1998000
+cover_s1,45,Northfield Paving,bid,1,9657,4712,1966,688,0,end_turn,,9999,9992000,1996000
+cover_s1,46,Summit Grading,message,1,6890,4730,1370,1004,0,end_turn,,9999,9990000,1998000
+cover_s1,46,Lakeshore Asphalt,message,1,3921,4726,588,999,0,end_turn,,9999,9997000,1970000
+cover_s1,46,Lakeshore Asphalt,bid,1,6625,4867,1287,949,0,end_turn,,9999,9998000,1999000
+cover_s1,46,Riverbend Surfacing,bid,1,9297,4940,2058,691,0,end_turn,,9999,9988000,1973000
+cover_s1,46,Prairie Roadworks,bid,1,8733,4702,1725,690,0,end_turn,,9999,9950000,1982000
+cover_s1,46,Summit Grading,bid,1,10280,4998,2100,954,0,end_turn,,9999,9991000,1990000
+cover_s1,46,Granite Ridge Construction,bid,1,7391,4515,1745,691,0,end_turn,,9999,9992000,1992000
+cover_s1,46,Northfield Paving,bid,1,8218,4662,1765,688,0,end_turn,,9999,9989000,1994000
+cover_s1,47,Lakeshore Asphalt,message,1,3155,4578,488,999,0,end_turn,,9999,9996000,1996000
+cover_s1,47,Summit Grading,message,1,5795,4787,1029,1004,0,end_turn,,9999,9998000,1984000
+cover_s1,47,Lakeshore Asphalt,bid,1,5250,4879,988,949,0,end_turn,,9999,9998000,1999000
+cover_s1,47,Riverbend Surfacing,bid,1,8577,4915,1795,691,0,end_turn,,9998,9998000,1992000
+cover_s1,47,Prairie Roadworks,bid,1,8780,4706,1747,690,0,end_turn,,9999,9997000,1986000
+cover_s1,47,Summit Grading,bid,1,8704,4949,1965,954,0,end_turn,,9999,9998000,1997000
+cover_s1,47,Granite Ridge Construction,bid,1,7577,4598,1632,691,0,end_turn,,9999,9998000,1996000
+cover_s1,47,Northfield Paving,bid,1,7625,4634,1601,688,0,end_turn,,9998,9998000,1994000
+cover_s1,48,Summit Grading,message,1,6483,4713,1147,1004,0,end_turn,,9998,9998000,1999000
+cover_s1,48,Lakeshore Asphalt,message,1,6532,4696,1120,999,0,end_turn,,9999,9998000,1997000
+cover_s1,48,Lakeshore Asphalt,bid,1,5921,4874,1220,949,0,end_turn,,9999,9998000,1992000
+cover_s1,48,Riverbend Surfacing,bid,1,9280,4772,2023,691,0,end_turn,,9999,9998000,1994000
+cover_s1,48,Prairie Roadworks,bid,1,9843,4712,2166,690,0,end_turn,,9999,9996000,1992000
+cover_s1,48,Summit Grading,bid,1,11500,5028,2621,954,0,end_turn,,9999,9998000,1995000
+cover_s1,48,Granite Ridge Construction,bid,1,6717,4552,1396,691,0,end_turn,,9999,9998000,1998000
+cover_s1,48,Northfield Paving,bid,1,7858,4659,1761,688,0,end_turn,,9999,9998000,1998000
+cover_s1,49,Lakeshore Asphalt,message,1,6360,4666,1074,999,0,end_turn,,9998,9998000,1991000
+cover_s1,49,Summit Grading,message,1,6640,4857,1330,1004,0,end_turn,,9999,9998000,1994000
+cover_s1,49,Lakeshore Asphalt,bid,1,7063,4960,1402,949,0,end_turn,,9997,9991000,1997000
+cover_s1,49,Riverbend Surfacing,bid,1,8155,4806,1808,691,0,end_turn,,9998,9996000,1994000
+cover_s1,49,Prairie Roadworks,bid,1,11078,4786,2294,690,0,end_turn,,9998,9995000,1999000
+cover_s1,49,Summit Grading,bid,1,9297,5016,2025,954,0,end_turn,,9995,9993000,1995000
+cover_s1,49,Granite Ridge Construction,bid,1,9295,4539,1898,691,0,end_turn,,9998,9998000,1995000
+cover_s1,49,Northfield Paving,bid,1,8953,4816,1907,688,0,end_turn,,9999,9995000,1998000
+cover_s1,50,Summit Grading,message,1,5984,4736,1181,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,50,Lakeshore Asphalt,message,1,5984,4780,1225,999,0,end_turn,,9999,9990000,1992000
+cover_s1,50,Lakeshore Asphalt,bid,1,6890,4962,1381,949,0,end_turn,,9999,9976000,1996000
+cover_s1,50,Riverbend Surfacing,bid,1,9530,4824,2029,691,0,end_turn,,9999,9998000,1995000
+cover_s1,50,Prairie Roadworks,bid,1,10437,4764,2222,690,0,end_turn,,9999,9998000,1996000
+cover_s1,50,Summit Grading,bid,1,9202,5017,2080,954,0,end_turn,,9998,9987000,1997000
+cover_s1,50,Granite Ridge Construction,bid,1,6984,4601,1621,691,0,end_turn,,9998,9997000,1997000
+cover_s1,50,Northfield Paving,bid,1,8093,4902,1772,688,0,end_turn,,9998,9998000,1998000
+cover_s1,51,Lakeshore Asphalt,message,1,3952,4688,597,999,0,end_turn,,9999,9998000,1998000
+cover_s1,51,Summit Grading,message,1,6375,4880,1229,1004,0,end_turn,,9999,9996000,1997000
+cover_s1,51,Lakeshore Asphalt,bid,1,6860,4999,1281,949,0,end_turn,,9999,9998000,1995000
+cover_s1,51,Riverbend Surfacing,bid,1,9936,4727,2073,691,0,end_turn,,9999,9991000,1997000
+cover_s1,51,Prairie Roadworks,bid,1,10342,4864,2288,690,0,end_turn,,9999,9989000,1998000
+cover_s1,51,Summit Grading,bid,1,9157,5036,1976,954,0,end_turn,,9999,9998000,1992000
+cover_s1,51,Granite Ridge Construction,bid,1,7936,4617,1761,691,0,end_turn,,9999,9997000,1998000
+cover_s1,51,Northfield Paving,bid,1,8625,4719,1840,688,0,end_turn,,9998,9987000,1995000
+cover_s1,52,Summit Grading,message,1,7170,4719,1385,1004,0,end_turn,,9999,9998000,1994000
+cover_s1,52,Lakeshore Asphalt,message,1,3265,4762,572,999,0,end_turn,,9999,9998000,1998000
+cover_s1,52,Lakeshore Asphalt,bid,1,8827,4917,1826,949,0,end_turn,,9998,9998000,1997000
+cover_s1,52,Riverbend Surfacing,bid,1,9453,4709,1939,691,0,end_turn,,9999,9998000,1991000
+cover_s1,52,Prairie Roadworks,bid,1,7125,4815,1646,690,0,end_turn,,9999,9998000,1995000
+cover_s1,52,Summit Grading,bid,1,10077,5004,2227,954,0,end_turn,,9999,9998000,1997000
+cover_s1,52,Granite Ridge Construction,bid,1,7171,4669,1639,691,0,end_turn,,9999,9998000,1994000
+cover_s1,52,Northfield Paving,bid,1,10655,4738,2132,688,0,end_turn,,9999,9998000,1997000
+cover_s1,53,Lakeshore Asphalt,message,1,3234,4655,532,999,0,end_turn,,9999,9986000,1995000
+cover_s1,53,Summit Grading,message,1,7108,4854,1419,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,53,Lakeshore Asphalt,bid,1,5797,4903,1174,949,0,end_turn,,9999,9998000,1993000
+cover_s1,53,Riverbend Surfacing,bid,1,9342,4721,1957,691,0,end_turn,,9999,9998000,1998000
+cover_s1,53,Prairie Roadworks,bid,1,10875,4845,2049,690,0,end_turn,,9999,9998000,1998000
+cover_s1,53,Summit Grading,bid,1,9750,4977,2110,954,0,end_turn,,9999,9995000,1996000
+cover_s1,53,Granite Ridge Construction,bid,1,6921,4686,1522,691,0,end_turn,,9999,9990000,1997000
+cover_s1,53,Northfield Paving,bid,1,9217,4749,1962,688,0,end_turn,,9999,9996000,1997000
+cover_s1,54,Summit Grading,message,1,5609,4752,1054,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,54,Lakeshore Asphalt,message,1,3593,4776,565,999,0,end_turn,,9999,9998000,1990000
+cover_s1,54,Lakeshore Asphalt,bid,1,7889,4941,1658,949,0,end_turn,,9998,9998000,1992000
+cover_s1,54,Riverbend Surfacing,bid,1,9796,4660,2045,691,0,end_turn,,9999,9998000,1998000
+cover_s1,54,Prairie Roadworks,bid,1,11889,4834,2618,690,0,end_turn,,9999,9996000,1999000
+cover_s1,54,Summit Grading,bid,1,9328,5033,1882,954,0,end_turn,,9998,9996000,1974000
+cover_s1,54,Granite Ridge Construction,bid,1,7186,4639,1583,691,0,end_turn,,9999,9997000,1995000
+cover_s1,54,Northfield Paving,bid,1,7734,4810,1560,688,0,end_turn,,9998,9998000,1994000
+cover_s1,55,Lakeshore Asphalt,message,1,3094,4659,449,999,0,end_turn,,9999,9993000,2000000
+cover_s1,55,Summit Grading,message,1,4828,4694,887,1004,0,end_turn,,9999,9994000,1996000
+cover_s1,55,Lakeshore Asphalt,bid,1,7452,4897,1471,949,0,end_turn,,9999,9998000,1998000
+cover_s1,55,Riverbend Surfacing,bid,1,8703,4701,1924,691,0,end_turn,,9998,9985000,1983000
+cover_s1,55,Prairie Roadworks,bid,1,8984,4889,1816,690,0,end_turn,,9999,9986000,1977000
+cover_s1,55,Summit Grading,bid,1,6514,4838,1186,954,0,end_turn,,9999,9998000,1996000
+cover_s1,55,Granite Ridge Construction,bid,1,7844,4654,1710,691,0,end_turn,,9998,9989000,1996000
+cover_s1,55,Northfield Paving,bid,1,7234,4829,1593,688,0,end_turn,,9999,9989000,1996000
+cover_s1,56,Summit Grading,message,1,6484,4593,1131,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,56,Lakeshore Asphalt,message,1,4858,4779,681,999,0,end_turn,,9999,9985000,1994000
+cover_s1,56,Lakeshore Asphalt,bid,1,6063,4906,1253,949,0,end_turn,,9998,9998000,1999000
+cover_s1,56,Riverbend Surfacing,bid,1,9875,4583,2102,691,0,end_turn,,9999,9997000,1982000
+cover_s1,56,Prairie Roadworks,bid,1,7750,4889,1786,690,0,end_turn,,9998,9998000,1990000
+cover_s1,56,Summit Grading,bid,1,6500,4829,1447,954,0,end_turn,,9999,9998000,1989000
+cover_s1,56,Granite Ridge Construction,bid,1,9655,4672,1987,691,0,end_turn,,9999,9998000,1980000
+cover_s1,56,Northfield Paving,bid,1,8718,4784,1808,688,0,end_turn,,9998,9998000,1996000
+cover_s1,57,Lakeshore Asphalt,message,1,3514,4690,604,999,0,end_turn,,9998,9998000,1999000
+cover_s1,57,Summit Grading,message,1,5860,4711,1188,1004,0,end_turn,,9999,9997000,1990000
+cover_s1,57,Lakeshore Asphalt,bid,1,6609,4937,1326,949,0,end_turn,,9999,9996000,1995000
+cover_s1,57,Riverbend Surfacing,bid,1,9000,4665,1980,691,0,end_turn,,9999,9998000,1992000
+cover_s1,57,Prairie Roadworks,bid,1,17436,4802,3604,690,0,end_turn,,9999,9995000,1995000
+cover_s1,57,Summit Grading,bid,1,8875,4848,1938,954,0,end_turn,,9999,9996000,1997000
+cover_s1,57,Granite Ridge Construction,bid,1,9719,4690,2034,691,0,end_turn,,9999,9979000,1989000
+cover_s1,57,Northfield Paving,bid,1,7969,4848,1720,688,0,end_turn,,9999,9989000,1995000
+cover_s1,58,Summit Grading,message,1,4844,4618,848,1004,0,end_turn,,9995,9984000,1999000
+cover_s1,58,Lakeshore Asphalt,message,1,3563,4840,637,999,0,end_turn,,9999,9998000,1999000
+cover_s1,58,Lakeshore Asphalt,bid,1,7546,4978,1637,949,0,end_turn,,9999,9996000,1998000
+cover_s1,58,Riverbend Surfacing,bid,1,8829,4824,1966,691,0,end_turn,,9999,9992000,1998000
+cover_s1,58,Prairie Roadworks,bid,1,9407,4931,1947,690,0,end_turn,,9999,9989000,1998000
+cover_s1,58,Summit Grading,bid,1,8500,4900,1769,954,0,end_turn,,9999,9993000,1992000
+cover_s1,58,Granite Ridge Construction,bid,1,10266,4725,2102,691,0,end_turn,,9996,9987000,1998000
+cover_s1,58,Northfield Paving,bid,1,8469,4857,1835,688,0,end_turn,,9998,9993000,1998000
+cover_s1,59,Lakeshore Asphalt,message,1,5859,4728,869,999,0,end_turn,,9998,9994000,1999000
+cover_s1,59,Summit Grading,message,1,7827,4692,1533,1004,0,end_turn,,9999,9996000,1991000
+cover_s1,59,Lakeshore Asphalt,bid,1,5546,4994,1150,949,0,end_turn,,9999,9998000,1995000
+cover_s1,59,Riverbend Surfacing,bid,1,10344,4878,2288,691,0,end_turn,,9999,9996000,1997000
+cover_s1,59,Prairie Roadworks,bid,1,10359,4951,2166,690,0,end_turn,,9999,9998000,1994000
+cover_s1,59,Summit Grading,bid,1,7530,4824,1784,954,0,end_turn,,9999,9998000,1998000
+cover_s1,59,Granite Ridge Construction,bid,1,8530,4820,1861,691,0,end_turn,,9999,9998000,1998000
+cover_s1,59,Northfield Paving,bid,1,9734,4772,2002,688,0,end_turn,,9999,9998000,1996000
+cover_s1,60,Summit Grading,message,1,5609,4584,1065,1004,0,end_turn,,9999,9993000,1996000
+cover_s1,60,Lakeshore Asphalt,message,1,3578,4788,635,999,0,end_turn,,9999,9998000,1993000
+cover_s1,60,Lakeshore Asphalt,bid,1,7546,4927,1493,949,0,end_turn,,9998,9994000,1999000
+cover_s1,60,Riverbend Surfacing,bid,1,8203,4800,1675,691,0,end_turn,,9999,9987000,1996000
+cover_s1,60,Prairie Roadworks,bid,1,8968,4939,1949,690,0,end_turn,,9999,9998000,1998000
+cover_s1,60,Summit Grading,bid,1,13109,4849,2783,954,0,end_turn,,9998,9998000,1977000
+cover_s1,60,Granite Ridge Construction,bid,1,8593,4713,1934,691,0,end_turn,,9999,9998000,1995000
+cover_s1,60,Northfield Paving,bid,1,9000,4888,1866,688,0,end_turn,,9999,9998000,1996000
+cover_s1,61,Lakeshore Asphalt,message,1,4686,4692,458,999,0,end_turn,,9999,9983000,1997000
+cover_s1,61,Summit Grading,message,1,8266,4781,1640,1004,0,end_turn,,9999,9998000,1998000
+cover_s1,61,Lakeshore Asphalt,bid,1,5875,4959,1237,949,0,end_turn,,9999,9998000,1988000
+cover_s1,61,Riverbend Surfacing,bid,1,9781,4769,2176,691,0,end_turn,,9999,9989000,1977000
+cover_s1,61,Prairie Roadworks,bid,1,8609,4916,1726,690,0,end_turn,,9998,9998000,1994000
+cover_s1,61,Summit Grading,bid,1,12218,4927,2597,954,0,end_turn,,9999,9998000,1998000
+cover_s1,61,Granite Ridge Construction,bid,1,10062,4722,2274,691,0,end_turn,,9999,9998000,1976000
+cover_s1,61,Northfield Paving,bid,1,8156,4834,1738,688,0,end_turn,,9999,9989000,1991000
+cover_s1,62,Summit Grading,message,1,6390,4700,1274,1004,0,end_turn,,9998,9998000,1997000
+cover_s1,62,Lakeshore Asphalt,message,1,2342,4800,437,999,0,end_turn,,9999,9996000,1998000
+cover_s1,62,Lakeshore Asphalt,bid,1,9094,4954,1930,949,0,end_turn,,9999,9996000,1990000
+cover_s1,62,Riverbend Surfacing,bid,1,8827,4759,1880,691,0,end_turn,,9999,9996000,1997000
+cover_s1,62,Prairie Roadworks,bid,1,9327,4877,2130,690,0,end_turn,,9999,9998000,1997000
+cover_s1,62,Summit Grading,bid,1,8327,4967,1793,954,0,end_turn,,9999,9996000,1996000
+cover_s1,62,Granite Ridge Construction,bid,1,7280,4749,1641,691,0,end_turn,,9999,9998000,1997000
+cover_s1,62,Northfield Paving,bid,1,7077,4854,1518,688,0,end_turn,,9999,9998000,1998000
+cover_s1,63,Lakeshore Asphalt,message,1,6546,4592,1288,999,0,end_turn,,9999,9998000,1999000
+cover_s1,63,Summit Grading,message,1,6859,4777,1209,1004,0,end_turn,,9999,9998000,1998000
+cover_s1,63,Lakeshore Asphalt,bid,1,8936,4813,1833,949,0,end_turn,,9999,9998000,1998000
+cover_s1,63,Riverbend Surfacing,bid,1,8155,4792,1729,691,0,end_turn,,9999,9996000,1995000
+cover_s1,63,Prairie Roadworks,bid,1,7047,4902,1697,690,0,end_turn,,9999,9993000,1997000
+cover_s1,63,Summit Grading,bid,1,6390,4886,1426,954,0,end_turn,,9999,9998000,1998000
+cover_s1,63,Granite Ridge Construction,bid,1,9172,4736,1977,691,0,end_turn,,9998,9995000,1996000
+cover_s1,63,Northfield Paving,bid,1,8530,4748,1785,688,0,end_turn,,9998,9995000,1998000
+cover_s1,64,Summit Grading,message,1,6327,4685,1177,1004,0,end_turn,,9999,9997000,1998000
+cover_s1,64,Lakeshore Asphalt,message,1,6609,4713,1337,999,0,end_turn,,9999,9998000,1997000
+cover_s1,64,Lakeshore Asphalt,bid,1,11375,4853,2059,949,0,end_turn,,9999,9998000,1998000
+cover_s1,64,Riverbend Surfacing,bid,1,7686,4730,1669,691,0,end_turn,,9999,9998000,1998000
+cover_s1,64,Prairie Roadworks,bid,1,9250,4958,2190,690,0,end_turn,,9999,9998000,1998000
+cover_s1,64,Summit Grading,bid,1,9828,4962,2162,954,0,end_turn,,9998,9998000,1998000
+cover_s1,64,Granite Ridge Construction,bid,1,8984,4654,1941,691,0,end_turn,,9999,9998000,1997000
+cover_s1,64,Northfield Paving,bid,1,9936,4777,2102,688,0,end_turn,,9999,9998000,1997000
+cover_s1,65,Lakeshore Asphalt,message,1,6077,4643,1230,999,0,end_turn,,9999,9998000,1998000
+cover_s1,65,Summit Grading,message,1,5750,4849,937,1004,0,end_turn,,9999,9997000,1999000
+cover_s1,65,Lakeshore Asphalt,bid,1,10500,4924,2350,949,0,end_turn,,9999,9994000,1998000
+cover_s1,65,Riverbend Surfacing,bid,1,8140,4714,1754,691,0,end_turn,,9999,9998000,1998000
+cover_s1,65,Prairie Roadworks,bid,1,11608,4866,2434,690,0,end_turn,,9999,9998000,1998000
+cover_s1,65,Summit Grading,bid,1,6359,4998,1333,954,0,end_turn,,9999,9997000,1999000
+cover_s1,65,Granite Ridge Construction,bid,1,10827,4685,2353,691,0,end_turn,,9999,9998000,1997000
+cover_s1,65,Northfield Paving,bid,1,7577,4737,1477,688,0,end_turn,,9998,9998000,1999000
+cover_s1,66,Summit Grading,message,1,7343,4752,1303,1004,0,end_turn,,9998,9998000,1996000
+cover_s1,66,Lakeshore Asphalt,message,1,6000,4789,1143,999,0,end_turn,,9999,9998000,1998000
+cover_s1,66,Lakeshore Asphalt,bid,1,8922,4964,2049,949,0,end_turn,,9999,9998000,1998000
+cover_s1,66,Riverbend Surfacing,bid,1,9563,4718,2028,691,0,end_turn,,9999,9998000,1998000
+cover_s1,66,Prairie Roadworks,bid,1,8155,4992,1675,690,0,end_turn,,9998,9997000,1998000
+cover_s1,66,Summit Grading,bid,1,6764,5039,1477,954,0,end_turn,,9999,9998000,1995000
+cover_s1,66,Granite Ridge Construction,bid,1,10546,4738,2070,691,0,end_turn,,9999,9998000,1995000
+cover_s1,66,Northfield Paving,bid,1,10358,4688,2285,688,0,end_turn,,9997,9998000,1998000
+cover_s1,67,Lakeshore Asphalt,message,1,9640,4677,1810,999,0,end_turn,,9999,9998000,1997000
+cover_s1,67,Summit Grading,message,1,3125,4916,561,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,67,Lakeshore Asphalt,bid,1,9000,4983,2033,949,0,end_turn,,9999,9998000,1996000
+cover_s1,67,Riverbend Surfacing,bid,1,8812,4781,1892,691,0,end_turn,,9999,9994000,1998000
+cover_s1,67,Prairie Roadworks,bid,1,8094,4965,1786,690,0,end_turn,,9999,9997000,1996000
+cover_s1,67,Summit Grading,bid,1,6530,5056,1408,954,0,end_turn,,9999,9998000,1999000
+cover_s1,67,Granite Ridge Construction,bid,1,7171,4634,1543,691,0,end_turn,,9999,9997000,1998000
+cover_s1,67,Northfield Paving,bid,1,7655,4743,1696,688,0,end_turn,,9999,9995000,1998000
+cover_s1,68,Summit Grading,message,1,3219,4732,568,1004,0,end_turn,,9999,9996000,1999000
+cover_s1,68,Lakeshore Asphalt,message,1,6110,4822,1132,999,0,end_turn,,9999,9998000,1999000
+cover_s1,68,Lakeshore Asphalt,bid,1,9547,4975,2112,949,0,end_turn,,9998,9998000,1998000
+cover_s1,68,Riverbend Surfacing,bid,1,10406,4773,2323,691,0,end_turn,,9999,9996000,1998000
+cover_s1,68,Prairie Roadworks,bid,1,9235,4955,1906,690,0,end_turn,,9998,9993000,1998000
+cover_s1,68,Summit Grading,bid,1,9000,5007,1867,954,0,end_turn,,9999,9998000,1997000
+cover_s1,68,Granite Ridge Construction,bid,1,8891,4632,1917,691,0,end_turn,,9998,9998000,1998000
+cover_s1,68,Northfield Paving,bid,1,7782,4796,1661,688,0,end_turn,,9999,9998000,1998000
+cover_s1,69,Lakeshore Asphalt,message,1,7421,4694,1555,999,0,end_turn,,9999,9998000,1996000
+cover_s1,69,Summit Grading,message,1,5265,4944,932,1004,0,end_turn,bad_json,9999,9998000,1999000
+cover_s1,69,Lakeshore Asphalt,bid,1,11514,4880,2630,949,0,end_turn,,9999,9998000,2000000
+cover_s1,69,Riverbend Surfacing,bid,1,10625,4803,2299,691,0,end_turn,,9999,9998000,1998000
+cover_s1,69,Prairie Roadworks,bid,1,7187,4911,1566,690,0,end_turn,,9998,9998000,1998000
+cover_s1,69,Summit Grading,bid,1,5187,4955,1041,954,0,end_turn,,9998,9998000,1999000
+cover_s1,69,Granite Ridge Construction,bid,1,9156,4638,1838,691,0,end_turn,,9999,9998000,1995000
+cover_s1,69,Northfield Paving,bid,1,8452,4743,1773,688,0,end_turn,,9999,9998000,1996000
+cover_s1,70,Summit Grading,message,1,3421,4708,574,1004,0,end_turn,,9999,9994000,1999000
+cover_s1,70,Lakeshore Asphalt,message,1,6920,4861,1458,999,0,end_turn,,9999,9998000,1999000
+cover_s1,70,Lakeshore Asphalt,bid,1,10438,4997,2242,949,0,end_turn,,9999,9998000,1998000
+cover_s1,70,Riverbend Surfacing,bid,1,8530,4823,1911,691,0,end_turn,,9998,9998000,1998000
+cover_s1,70,Prairie Roadworks,bid,1,8452,4821,1939,690,0,end_turn,,9998,9995000,1997000
+cover_s1,70,Summit Grading,bid,1,7469,4963,1438,954,0,end_turn,,9999,9998000,1999000
+cover_s1,70,Granite Ridge Construction,bid,1,7405,4680,1624,691,0,end_turn,,9999,9998000,1998000
+cover_s1,70,Northfield Paving,bid,1,9859,4736,2084,688,0,end_turn,,9999,9998000,1998000
+cover_s1,71,Lakeshore Asphalt,message,1,6594,4699,1358,999,0,end_turn,,9999,9996000,1999000
+cover_s1,71,Summit Grading,message,1,4780,4793,893,1004,0,end_turn,,9998,9998000,1999000
+cover_s1,71,Lakeshore Asphalt,bid,1,11109,5003,2290,949,0,end_turn,,9999,9994000,1994000
+cover_s1,71,Riverbend Surfacing,bid,1,9672,4809,1894,691,0,end_turn,,9999,9998000,1998000
+cover_s1,71,Prairie Roadworks,bid,1,9140,4916,1722,690,0,end_turn,,9999,9998000,1998000
+cover_s1,71,Summit Grading,bid,1,8719,4963,1907,954,0,end_turn,,9999,9998000,1997000
+cover_s1,71,Granite Ridge Construction,bid,1,8140,4663,1745,691,0,end_turn,,9998,9996000,1997000
+cover_s1,71,Northfield Paving,bid,1,7890,4779,1716,688,0,end_turn,,9999,9998000,1998000
+cover_s1,72,Summit Grading,message,1,5937,4631,1022,1004,0,end_turn,,9999,9998000,1998000
+cover_s1,72,Lakeshore Asphalt,message,1,16578,4844,1396,999,0,end_turn,,9998,9998000,1998000
+cover_s1,72,Lakeshore Asphalt,bid,1,12734,4966,2809,949,0,end_turn,,9999,9998000,1997000
+cover_s1,72,Riverbend Surfacing,bid,1,7907,4744,1708,691,0,end_turn,,9999,9998000,1998000
+cover_s1,72,Prairie Roadworks,bid,1,8969,4885,1896,690,0,end_turn,,9999,9998000,1998000
+cover_s1,72,Summit Grading,bid,1,5467,4889,1053,954,0,end_turn,,9999,9997000,1999000
+cover_s1,72,Granite Ridge Construction,bid,1,7594,4716,1571,691,0,end_turn,,9999,9998000,1998000
+cover_s1,72,Northfield Paving,bid,1,6438,4820,1427,688,0,end_turn,,9999,9998000,1999000
+cover_s1,73,Lakeshore Asphalt,message,1,5703,4702,1140,999,0,end_turn,,9999,9997000,1998000
+cover_s1,73,Summit Grading,message,1,2859,4673,523,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,73,Lakeshore Asphalt,bid,1,10593,4932,2305,949,0,end_turn,,9999,9995000,1998000
+cover_s1,73,Riverbend Surfacing,bid,1,10469,4726,2315,691,0,end_turn,,9998,9995000,1998000
+cover_s1,73,Prairie Roadworks,bid,1,7530,4868,1622,690,0,end_turn,,9998,9997000,1998000
+cover_s1,73,Summit Grading,bid,1,5265,4795,1055,954,0,end_turn,,9999,9998000,1999000
+cover_s1,73,Granite Ridge Construction,bid,1,8327,4655,1827,691,0,end_turn,,9997,9996000,1998000
+cover_s1,73,Northfield Paving,bid,1,11530,4785,2415,688,0,end_turn,,9998,9998000,1999000
+cover_s1,74,Summit Grading,message,1,4890,4583,816,1004,0,end_turn,bad_json,9999,9998000,1999000
+cover_s1,74,Lakeshore Asphalt,message,1,5952,4729,1196,999,0,end_turn,,9999,9998000,1998000
+cover_s1,74,Lakeshore Asphalt,bid,1,8672,4866,1889,949,0,end_turn,,9998,9998000,1998000
+cover_s1,74,Riverbend Surfacing,bid,1,8827,4724,1817,691,0,end_turn,,9999,9998000,1998000
+cover_s1,74,Prairie Roadworks,bid,1,8593,4835,1829,690,0,end_turn,,9999,9998000,1998000
+cover_s1,74,Summit Grading,bid,1,4014,4716,841,954,0,end_turn,,9999,9998000,1998000
+cover_s1,74,Granite Ridge Construction,bid,1,10437,4690,2258,691,0,end_turn,,9999,9998000,1998000
+cover_s1,74,Northfield Paving,bid,1,10500,4877,2195,688,0,end_turn,,9999,9998000,1998000
+cover_s1,75,Lakeshore Asphalt,message,1,7046,4640,1399,999,0,end_turn,,9999,9995000,1999000
+cover_s1,75,Summit Grading,message,1,3656,4663,727,1004,0,end_turn,,9999,9998000,1996000
+cover_s1,75,Lakeshore Asphalt,bid,1,8515,4865,1848,949,0,end_turn,,9999,9998000,1998000
+cover_s1,75,Riverbend Surfacing,bid,1,8453,4679,1932,691,0,end_turn,,9999,9990000,1993000
+cover_s1,75,Prairie Roadworks,bid,1,8030,4836,1677,690,0,end_turn,,9999,9991000,1998000
+cover_s1,75,Summit Grading,bid,1,6250,4782,1291,954,0,end_turn,,9999,9998000,1998000
+cover_s1,75,Granite Ridge Construction,bid,1,9125,4641,2063,691,0,end_turn,,9999,9998000,1997000
+cover_s1,75,Northfield Paving,bid,1,6436,4776,1312,688,0,end_turn,,9999,9994000,1999000
+cover_s1,76,Summit Grading,message,1,3530,4606,470,1004,0,end_turn,,9999,9997000,2000000
+cover_s1,76,Lakeshore Asphalt,message,1,5937,4678,1216,999,0,end_turn,,9999,9998000,1999000
+cover_s1,76,Lakeshore Asphalt,bid,1,7640,4836,1728,949,0,end_turn,,9999,9998000,1998000
+cover_s1,76,Riverbend Surfacing,bid,1,8953,4689,1910,691,0,end_turn,,9999,9998000,1998000
+cover_s1,76,Prairie Roadworks,bid,1,8311,4828,1668,690,0,end_turn,,9999,9998000,1997000
+cover_s1,76,Summit Grading,bid,1,5890,4850,1125,954,0,end_turn,,9999,9998000,1999000
+cover_s1,76,Granite Ridge Construction,bid,1,7750,4695,1679,691,0,end_turn,,9999,9998000,1997000
+cover_s1,76,Northfield Paving,bid,1,6905,4697,1544,688,0,end_turn,,9999,9995000,1997000
+cover_s1,77,Lakeshore Asphalt,message,1,7266,4606,1525,999,0,end_turn,,9999,9998000,1997000
+cover_s1,77,Summit Grading,message,1,9014,4702,1434,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,77,Lakeshore Asphalt,bid,1,9125,4836,1944,949,0,end_turn,,9999,9998000,1998000
+cover_s1,77,Riverbend Surfacing,bid,1,7764,4676,1664,691,0,end_turn,,9999,9998000,1998000
+cover_s1,77,Prairie Roadworks,bid,1,8109,4896,1818,690,0,end_turn,,9999,9998000,1997000
+cover_s1,77,Summit Grading,bid,1,4187,4823,835,954,0,end_turn,,9999,9998000,1999000
+cover_s1,77,Granite Ridge Construction,bid,1,8389,4699,1808,691,0,end_turn,,9999,9998000,1998000
+cover_s1,77,Northfield Paving,bid,1,8281,4759,1892,688,0,end_turn,,9999,9998000,1998000
+cover_s1,78,Summit Grading,message,1,3218,4545,530,1004,0,end_turn,,9998,9998000,1999000
+cover_s1,78,Lakeshore Asphalt,message,1,6765,4728,1447,999,0,end_turn,,9999,9996000,1999000
+cover_s1,78,Lakeshore Asphalt,bid,1,7594,4861,1705,949,0,end_turn,,9999,9998000,1997000
+cover_s1,78,Riverbend Surfacing,bid,1,11593,4675,2540,691,0,end_turn,,9998,9998000,2000000
+cover_s1,78,Prairie Roadworks,bid,1,9468,4852,2031,690,0,end_turn,,9999,9998000,1998000
+cover_s1,78,Summit Grading,bid,1,6094,4767,1316,954,0,end_turn,,9998,9998000,1999000
+cover_s1,78,Granite Ridge Construction,bid,1,11812,4674,2629,691,0,end_turn,,9999,9996000,2000000
+cover_s1,78,Northfield Paving,bid,1,8718,4843,1839,688,0,end_turn,,9999,9994000,1998000
+cover_s1,79,Lakeshore Asphalt,message,1,6655,4641,1378,999,0,end_turn,,9998,9998000,1999000
+cover_s1,79,Summit Grading,message,1,4639,4776,807,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,79,Lakeshore Asphalt,bid,1,8610,4907,1928,949,0,end_turn,,9999,9998000,1998000
+cover_s1,79,Riverbend Surfacing,bid,1,8655,4636,1895,691,0,end_turn,,9999,9996000,1998000
+cover_s1,79,Prairie Roadworks,bid,1,7375,4875,1719,690,0,end_turn,,9999,9998000,1998000
+cover_s1,79,Summit Grading,bid,1,6407,4888,1329,954,0,end_turn,,9999,9997000,1996000
+cover_s1,79,Granite Ridge Construction,bid,1,11219,4662,2337,691,0,end_turn,,9999,9995000,2000000
+cover_s1,79,Northfield Paving,bid,1,6969,4812,1569,688,0,end_turn,,9999,9996000,1998000
+cover_s1,80,Summit Grading,message,1,6828,4628,1174,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,80,Lakeshore Asphalt,message,1,7202,4752,1212,999,0,end_turn,bad_json,9999,9998000,1993000
+cover_s1,80,Lakeshore Asphalt,bid,1,9422,4773,1941,949,0,end_turn,,9999,9998000,1998000
+cover_s1,80,Riverbend Surfacing,bid,1,8952,4702,2013,691,0,end_turn,,9999,9998000,1998000
+cover_s1,80,Prairie Roadworks,bid,1,9484,4925,2136,690,0,end_turn,,9999,9997000,1998000
+cover_s1,80,Summit Grading,bid,1,4764,4755,920,954,0,end_turn,,9999,9998000,1999000
+cover_s1,80,Granite Ridge Construction,bid,1,10015,4650,2132,691,0,end_turn,,9999,9996000,1998000
+cover_s1,80,Northfield Paving,bid,1,8469,4835,1817,688,0,end_turn,,9998,9996000,1995000
+cover_s1,81,Lakeshore Asphalt,message,1,7389,4724,1464,999,0,end_turn,,9998,9998000,1997000
+cover_s1,81,Summit Grading,message,1,3390,4679,623,1004,0,end_turn,,9997,9998000,1988000
+cover_s1,81,Lakeshore Asphalt,bid,1,8750,4984,1896,949,0,end_turn,,9997,9998000,1994000
+cover_s1,81,Riverbend Surfacing,bid,1,11014,4691,2286,691,0,end_turn,,9999,9995000,1993000
+cover_s1,81,Prairie Roadworks,bid,1,11186,4875,2502,690,0,end_turn,,9999,9998000,1998000
+cover_s1,81,Summit Grading,bid,1,5250,4802,1083,954,0,end_turn,,9999,9998000,1999000
+cover_s1,81,Granite Ridge Construction,bid,1,10405,4678,2053,691,0,end_turn,,9999,9998000,1998000
+cover_s1,81,Northfield Paving,bid,1,9139,4803,1881,688,0,end_turn,,9997,9998000,1998000
+cover_s1,82,Summit Grading,message,1,2921,4619,530,1004,0,end_turn,,9998,9996000,1999000
+cover_s1,82,Lakeshore Asphalt,message,1,7688,4870,1452,999,0,end_turn,,9999,9998000,1999000
+cover_s1,82,Lakeshore Asphalt,bid,1,10734,5006,1915,949,0,end_turn,,9999,9998000,1998000
+cover_s1,82,Riverbend Surfacing,bid,1,8421,4731,1759,691,0,end_turn,,9998,9996000,1998000
+cover_s1,82,Prairie Roadworks,bid,1,8217,4923,1772,690,0,end_turn,,9999,9998000,1998000
+cover_s1,82,Summit Grading,bid,1,9514,4859,1905,954,0,end_turn,,9998,9998000,1998000
+cover_s1,82,Granite Ridge Construction,bid,1,11671,4728,2392,691,0,end_turn,,9999,9998000,1998000
+cover_s1,82,Northfield Paving,bid,1,8484,4793,1895,688,0,end_turn,,9999,9998000,1998000
+cover_s1,83,Lakeshore Asphalt,message,1,5390,4779,1132,999,0,end_turn,,9999,9997000,1999000
+cover_s1,83,Summit Grading,message,1,6796,4822,1167,1004,0,end_turn,bad_json,9999,9998000,1999000
+cover_s1,83,Lakeshore Asphalt,bid,1,8203,4922,1932,949,0,end_turn,,9999,9998000,1997000
+cover_s1,83,Riverbend Surfacing,bid,1,11031,4685,2353,691,0,end_turn,,9998,9998000,2000000
+cover_s1,83,Prairie Roadworks,bid,1,9765,4852,2129,690,0,end_turn,,9999,9995000,1998000
+cover_s1,83,Summit Grading,bid,1,5781,4833,1267,954,0,end_turn,,9999,9996000,1997000
+cover_s1,83,Granite Ridge Construction,bid,1,8796,4706,1957,691,0,end_turn,,9999,9994000,1994000
+cover_s1,83,Northfield Paving,bid,1,8781,4942,1949,688,0,end_turn,,9998,9995000,1997000
+cover_s1,84,Summit Grading,message,1,5937,4703,952,1004,0,end_turn,bad_json,9999,9995000,1999000
+cover_s1,84,Lakeshore Asphalt,message,1,8969,4785,1642,999,0,end_turn,,9999,9998000,1998000
+cover_s1,84,Lakeshore Asphalt,bid,1,7702,4904,1717,949,0,end_turn,,9999,9998000,1996000
+cover_s1,84,Riverbend Surfacing,bid,1,9094,4768,1903,691,0,end_turn,,9998,9997000,1996000
+cover_s1,84,Prairie Roadworks,bid,1,7547,5018,1698,690,0,end_turn,,9999,9997000,1998000
+cover_s1,84,Summit Grading,bid,1,5952,4818,1233,954,0,end_turn,,9999,9998000,1999000
+cover_s1,84,Granite Ridge Construction,bid,1,7875,4601,1721,691,0,end_turn,,9999,9998000,1998000
+cover_s1,84,Northfield Paving,bid,1,8015,4811,1717,688,0,end_turn,,9999,9998000,1998000
+cover_s1,85,Lakeshore Asphalt,message,1,9843,4712,1818,999,0,end_turn,,9998,9998000,1997000
+cover_s1,85,Summit Grading,message,1,5829,4827,1021,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,85,Lakeshore Asphalt,bid,1,8000,4952,1789,949,0,end_turn,,9999,9998000,1998000
+cover_s1,85,Riverbend Surfacing,bid,1,9155,4753,2048,691,0,end_turn,,9999,9998000,1997000
+cover_s1,85,Prairie Roadworks,bid,1,12093,4916,2532,690,0,end_turn,,9999,9998000,2000000
+cover_s1,85,Summit Grading,bid,1,5313,4927,1058,954,0,end_turn,,9999,9998000,1995000
+cover_s1,85,Granite Ridge Construction,bid,1,9952,4623,2042,691,0,end_turn,,9998,9998000,1996000
+cover_s1,85,Northfield Paving,bid,1,9077,4694,2036,688,0,end_turn,,9999,9998000,1998000
+cover_s1,86,Summit Grading,message,1,3860,4648,686,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,86,Lakeshore Asphalt,message,1,5592,4908,1139,999,0,end_turn,,9999,9998000,1999000
+cover_s1,86,Lakeshore Asphalt,bid,1,9079,5037,1957,949,0,end_turn,,9999,9998000,1996000
+cover_s1,86,Riverbend Surfacing,bid,1,11344,4777,2256,691,0,end_turn,,9999,9998000,2000000
+cover_s1,86,Prairie Roadworks,bid,1,12250,4904,2556,690,0,end_turn,,9999,9998000,2000000
+cover_s1,86,Summit Grading,bid,1,7765,4877,1584,954,0,end_turn,,9999,9998000,1998000
+cover_s1,86,Granite Ridge Construction,bid,1,6969,4677,1556,691,0,end_turn,,9998,9998000,1994000
+cover_s1,86,Northfield Paving,bid,1,7562,4741,1540,688,0,end_turn,,9999,9998000,1997000
+cover_s1,87,Lakeshore Asphalt,message,1,6546,4790,1228,999,0,end_turn,,9999,9998000,1999000
+cover_s1,87,Summit Grading,message,1,4672,4690,840,1004,0,end_turn,,9999,9996000,1994000
+cover_s1,87,Lakeshore Asphalt,bid,1,9594,5035,2129,949,0,end_turn,,9999,9998000,1998000
+cover_s1,87,Riverbend Surfacing,bid,1,12078,4741,2438,691,0,end_turn,,9999,9998000,2000000
+cover_s1,87,Prairie Roadworks,bid,1,11265,5023,2592,690,0,end_turn,,9999,9995000,1996000
+cover_s1,87,Summit Grading,bid,1,9687,4822,1991,954,0,end_turn,,9999,9998000,1998000
+cover_s1,87,Granite Ridge Construction,bid,1,11155,4710,2498,691,0,end_turn,,9999,9998000,1993000
+cover_s1,87,Northfield Paving,bid,1,8860,4745,1861,688,0,end_turn,,9999,9998000,1996000
+cover_s1,88,Summit Grading,message,1,7250,4687,1277,1004,0,end_turn,,9999,9996000,1998000
+cover_s1,88,Lakeshore Asphalt,message,1,6467,4928,1231,999,0,end_turn,,9999,9998000,1999000
+cover_s1,88,Lakeshore Asphalt,bid,1,9875,5100,1922,949,0,end_turn,,9998,9998000,1998000
+cover_s1,88,Riverbend Surfacing,bid,1,11327,4726,2395,691,0,end_turn,,9999,9998000,1997000
+cover_s1,88,Prairie Roadworks,bid,1,10514,5052,2417,690,0,end_turn,,9999,9997000,1998000
+cover_s1,88,Summit Grading,bid,1,5079,4972,1047,954,0,end_turn,,9998,9992000,1998000
+cover_s1,88,Granite Ridge Construction,bid,1,9062,4862,1797,691,0,end_turn,,9999,9996000,1997000
+cover_s1,88,Northfield Paving,bid,1,7905,4803,1645,688,0,end_turn,,9999,9998000,1998000
+cover_s1,89,Lakeshore Asphalt,message,1,5859,4728,1182,999,0,end_turn,,9997,9998000,1999000
+cover_s1,89,Summit Grading,message,1,5515,4726,969,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,89,Lakeshore Asphalt,bid,1,8889,4985,1846,949,0,end_turn,,9999,9998000,1998000
+cover_s1,89,Riverbend Surfacing,bid,1,8110,4830,1798,691,0,end_turn,,9998,9998000,1997000
+cover_s1,89,Prairie Roadworks,bid,1,9688,5105,2201,690,0,end_turn,,9999,9997000,1998000
+cover_s1,89,Summit Grading,bid,1,6531,4859,1314,954,0,end_turn,,9999,9998000,1999000
+cover_s1,89,Granite Ridge Construction,bid,1,9438,4700,1973,691,0,end_turn,,9998,9998000,1998000
+cover_s1,89,Northfield Paving,bid,1,7297,4817,1561,688,0,end_turn,,9999,9998000,1998000
+cover_s1,90,Summit Grading,message,1,4610,4614,791,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,90,Lakeshore Asphalt,message,1,5765,4820,1123,999,0,end_turn,,9999,9998000,1999000
+cover_s1,90,Lakeshore Asphalt,bid,1,8984,4953,1944,949,0,end_turn,,9999,9998000,1998000
+cover_s1,90,Riverbend Surfacing,bid,1,9311,4836,1932,691,0,end_turn,,9998,9997000,1998000
+cover_s1,90,Prairie Roadworks,bid,1,9344,5062,1909,690,0,end_turn,,9998,9994000,1998000
+cover_s1,90,Summit Grading,bid,1,8578,4845,1782,954,0,end_turn,,9999,9998000,1998000
+cover_s1,90,Granite Ridge Construction,bid,1,7734,4699,1730,691,0,end_turn,,9999,9998000,1998000
+cover_s1,90,Northfield Paving,bid,1,8389,4766,1671,688,0,end_turn,,9999,9996000,1998000
+cover_s1,91,Lakeshore Asphalt,message,1,5485,4771,1062,999,0,end_turn,,9999,9997000,1999000
+cover_s1,91,Summit Grading,message,1,6187,4723,1100,1004,0,end_turn,bad_json,9999,9998000,1998000
+cover_s1,91,Lakeshore Asphalt,bid,1,8046,4908,1853,949,0,end_turn,,9999,9998000,1998000
+cover_s1,91,Riverbend Surfacing,bid,1,9094,4766,2011,691,0,end_turn,,9999,9997000,1998000
+cover_s1,91,Prairie Roadworks,bid,1,10844,4888,2314,690,0,end_turn,,9999,9996000,1998000
+cover_s1,91,Summit Grading,bid,1,5687,4734,1189,954,0,end_turn,,9999,9998000,1999000
+cover_s1,91,Granite Ridge Construction,bid,1,9922,4701,2169,691,0,end_turn,,9999,9995000,1994000
+cover_s1,91,Northfield Paving,bid,1,14297,4754,3085,688,0,end_turn,,9999,9998000,1998000
+cover_s1,92,Summit Grading,message,1,6969,4557,1248,1004,0,end_turn,,9999,9998000,1998000
+cover_s1,92,Lakeshore Asphalt,message,1,6312,4937,1313,999,0,end_turn,,9999,9998000,1998000
+cover_s1,92,Lakeshore Asphalt,bid,1,9015,5093,1830,949,0,end_turn,,9999,9998000,1998000
+cover_s1,92,Riverbend Surfacing,bid,1,8344,4842,1837,691,0,end_turn,,9999,9994000,1998000
+cover_s1,92,Prairie Roadworks,bid,1,10625,4947,2242,690,0,end_turn,,9999,9989000,1998000
+cover_s1,92,Summit Grading,bid,1,5765,4840,1263,954,0,end_turn,,9999,9998000,1999000
+cover_s1,92,Granite Ridge Construction,bid,1,9687,4741,1885,691,0,end_turn,,9999,9998000,1998000
+cover_s1,92,Northfield Paving,bid,1,8062,4702,1710,688,0,end_turn,,9998,9998000,1998000
+cover_s1,93,Lakeshore Asphalt,message,1,6670,4822,1259,999,0,end_turn,,9999,9998000,1999000
+cover_s1,93,Summit Grading,message,1,4125,4717,752,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,93,Lakeshore Asphalt,bid,1,8375,5045,1735,949,0,end_turn,,9999,9998000,1998000
+cover_s1,93,Riverbend Surfacing,bid,1,8703,4805,1829,691,0,end_turn,,9999,9998000,1998000
+cover_s1,93,Prairie Roadworks,bid,1,8859,4914,1963,690,0,end_turn,,9999,9998000,1998000
+cover_s1,93,Summit Grading,bid,1,5233,4829,1009,954,0,end_turn,,9999,9998000,1999000
+cover_s1,93,Granite Ridge Construction,bid,1,10155,4600,2063,691,0,end_turn,,9998,9998000,1998000
+cover_s1,93,Northfield Paving,bid,1,11000,4723,2058,688,0,end_turn,,9999,9998000,1997000
+cover_s1,94,Summit Grading,message,1,3077,4587,526,1004,0,end_turn,,9999,9998000,1998000
+cover_s1,94,Lakeshore Asphalt,message,1,7125,4893,1466,999,0,end_turn,,9999,9998000,1996000
+cover_s1,94,Lakeshore Asphalt,bid,1,9797,5025,2056,949,0,end_turn,,9999,9998000,1996000
+cover_s1,94,Riverbend Surfacing,bid,1,7734,4792,1731,691,0,end_turn,,9999,9998000,1998000
+cover_s1,94,Prairie Roadworks,bid,1,11077,4934,2262,690,0,end_turn,,9998,9998000,1998000
+cover_s1,94,Summit Grading,bid,1,5063,4829,1029,954,0,end_turn,,9999,9998000,1998000
+cover_s1,94,Granite Ridge Construction,bid,1,9875,4626,1945,691,0,end_turn,,9999,9998000,1998000
+cover_s1,94,Northfield Paving,bid,1,6921,4798,1529,688,0,end_turn,,9999,9998000,1997000
+cover_s1,95,Lakeshore Asphalt,message,1,7000,4773,1359,999,0,end_turn,,9999,9991000,1998000
+cover_s1,95,Summit Grading,message,1,6045,4680,1063,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,95,Lakeshore Asphalt,bid,1,8891,5032,1723,949,0,end_turn,,9999,9995000,1997000
+cover_s1,95,Riverbend Surfacing,bid,1,9828,4827,2006,691,0,end_turn,,9999,9997000,1995000
+cover_s1,95,Prairie Roadworks,bid,1,10828,4869,2188,690,0,end_turn,,9999,9996000,1999000
+cover_s1,95,Summit Grading,bid,1,5829,4817,1149,954,0,end_turn,,9999,9998000,1999000
+cover_s1,95,Granite Ridge Construction,bid,1,8014,4587,1783,691,0,end_turn,,9999,9998000,1998000
+cover_s1,95,Northfield Paving,bid,1,10687,4723,2161,688,0,end_turn,,9998,9998000,1994000
+cover_s1,96,Summit Grading,message,1,5359,4579,867,1004,0,end_turn,,9998,9997000,1999000
+cover_s1,96,Lakeshore Asphalt,message,1,6094,4849,1304,999,0,end_turn,,9999,9998000,1998000
+cover_s1,96,Lakeshore Asphalt,bid,1,9406,5004,1846,949,0,end_turn,,9999,9998000,1997000
+cover_s1,96,Riverbend Surfacing,bid,1,7703,4704,1714,691,0,end_turn,,9999,9997000,1998000
+cover_s1,96,Prairie Roadworks,bid,1,8860,4900,1702,690,0,end_turn,,9999,9998000,1998000
+cover_s1,96,Summit Grading,bid,1,4140,4788,884,954,0,end_turn,,9999,9998000,1999000
+cover_s1,96,Granite Ridge Construction,bid,1,8000,4624,1668,691,0,end_turn,,9999,9996000,1998000
+cover_s1,96,Northfield Paving,bid,1,8671,4717,1812,688,0,end_turn,,9999,9998000,1996000
+cover_s1,97,Lakeshore Asphalt,message,1,4407,4792,828,999,0,end_turn,,9998,9998000,1999000
+cover_s1,97,Summit Grading,message,1,3936,4692,725,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,97,Lakeshore Asphalt,bid,1,8110,5050,1716,949,0,end_turn,,9999,9998000,1998000
+cover_s1,97,Riverbend Surfacing,bid,1,8297,4815,1747,691,0,end_turn,,9999,9998000,1997000
+cover_s1,97,Prairie Roadworks,bid,1,7639,4834,1775,690,0,end_turn,,9999,9998000,1998000
+cover_s1,97,Summit Grading,bid,1,5453,4814,1104,954,0,end_turn,,9999,9998000,1997000
+cover_s1,97,Granite Ridge Construction,bid,1,9625,4527,1978,691,0,end_turn,,9999,9998000,1998000
+cover_s1,97,Northfield Paving,bid,1,9875,4800,2095,688,0,end_turn,,9999,9998000,1998000
+cover_s1,98,Summit Grading,message,1,3625,4586,640,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,98,Lakeshore Asphalt,message,1,7030,4863,1186,999,0,end_turn,,9999,9998000,1999000
+cover_s1,98,Lakeshore Asphalt,bid,1,10515,5036,2213,949,0,end_turn,,9999,9995000,1998000
+cover_s1,98,Riverbend Surfacing,bid,1,10264,4857,2165,691,0,end_turn,,9999,9998000,1998000
+cover_s1,98,Prairie Roadworks,bid,1,8561,4777,1828,690,0,end_turn,,9999,9998000,1998000
+cover_s1,98,Summit Grading,bid,1,5594,4850,1144,954,0,end_turn,,9999,9998000,1998000
+cover_s1,98,Granite Ridge Construction,bid,1,11421,4538,2315,691,0,end_turn,,9999,9998000,2000000
+cover_s1,98,Northfield Paving,bid,1,6561,4735,1475,688,0,end_turn,,9999,9996000,1999000
+cover_s1,99,Lakeshore Asphalt,message,1,6077,4799,1106,999,0,end_turn,,9999,9996000,1998000
+cover_s1,99,Summit Grading,message,1,4389,4735,705,1004,0,end_turn,,9998,9998000,1999000
+cover_s1,99,Lakeshore Asphalt,bid,1,9625,5092,2021,949,0,end_turn,,9998,9998000,1998000
+cover_s1,99,Riverbend Surfacing,bid,1,11358,4771,2270,691,0,end_turn,,9999,9998000,2000000
+cover_s1,99,Prairie Roadworks,bid,1,8108,4776,1615,690,0,end_turn,,9999,9998000,1998000
+cover_s1,99,Summit Grading,bid,1,5438,4875,1118,954,0,end_turn,,9999,9998000,1999000
+cover_s1,99,Granite Ridge Construction,bid,1,9905,4584,2027,691,0,end_turn,,9999,9995000,1998000
+cover_s1,99,Northfield Paving,bid,1,6327,4688,1331,688,0,end_turn,,9998,9997000,1997000
+cover_s1,100,Summit Grading,message,1,2827,4581,473,1004,0,end_turn,,9999,9998000,2000000
+cover_s1,100,Lakeshore Asphalt,message,1,6719,4942,1404,999,0,end_turn,,9999,9998000,1999000
+cover_s1,100,Lakeshore Asphalt,bid,1,8812,5104,1990,949,0,end_turn,,9999,9996000,1998000
+cover_s1,100,Riverbend Surfacing,bid,1,9125,4800,1841,691,0,end_turn,,9999,9998000,1998000
+cover_s1,100,Prairie Roadworks,bid,1,10327,4764,2225,690,0,end_turn,,9999,9998000,1998000
+cover_s1,100,Summit Grading,bid,1,5109,4862,1086,954,0,end_turn,,9999,9996000,1997000
+cover_s1,100,Granite Ridge Construction,bid,1,8500,4594,1796,691,0,end_turn,,9998,9997000,1998000
+cover_s1,100,Northfield Paving,bid,1,6436,4642,1392,688,0,end_turn,,9999,9998000,1999000
+cover_s1,101,Lakeshore Asphalt,message,1,6547,4688,1247,999,0,end_turn,,9999,9998000,1997000
+cover_s1,101,Summit Grading,message,1,4827,4724,828,1004,0,end_turn,,9999,9997000,1999000
+cover_s1,101,Lakeshore Asphalt,bid,1,9985,4929,2017,949,0,end_turn,,9999,9998000,1996000
+cover_s1,101,Riverbend Surfacing,bid,1,6844,4686,1438,691,0,end_turn,,9999,9998000,1998000
+cover_s1,101,Prairie Roadworks,bid,1,8547,4780,1933,690,0,end_turn,,9998,9998000,1998000
+cover_s1,101,Summit Grading,bid,1,6329,4824,1386,954,0,end_turn,,9999,9996000,1998000
+cover_s1,101,Granite Ridge Construction,bid,1,9655,4572,2206,691,0,end_turn,,9999,9998000,1998000
+cover_s1,101,Northfield Paving,bid,1,7922,4628,1639,688,0,end_turn,,9999,9998000,1998000
+cover_s1,102,Summit Grading,message,1,5109,4593,970,1004,0,end_turn,,9998,9998000,1999000
+cover_s1,102,Lakeshore Asphalt,message,1,6280,4757,1203,999,0,end_turn,,9999,9998000,1999000
+cover_s1,102,Lakeshore Asphalt,bid,1,9437,4878,1997,949,0,end_turn,,9999,9998000,1998000
+cover_s1,102,Riverbend Surfacing,bid,1,7000,4618,1471,691,0,end_turn,,9999,9998000,1995000
+cover_s1,102,Prairie Roadworks,bid,1,9250,4796,2026,690,0,end_turn,,9998,9998000,1995000
+cover_s1,102,Summit Grading,bid,1,6390,4820,1315,954,0,end_turn,,9998,9998000,1999000
+cover_s1,102,Granite Ridge Construction,bid,1,7452,4513,1644,691,0,end_turn,,9999,9998000,1996000
+cover_s1,102,Northfield Paving,bid,1,5921,4652,1264,688,0,end_turn,,9998,9998000,1999000
+cover_s1,103,Lakeshore Asphalt,message,1,6343,4645,1236,999,0,end_turn,,9999,9992000,1999000
+cover_s1,103,Summit Grading,message,1,4672,4732,814,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,103,Lakeshore Asphalt,bid,1,9484,4896,2068,949,0,end_turn,,9999,9998000,1998000
+cover_s1,103,Riverbend Surfacing,bid,1,7530,4710,1556,691,0,end_turn,,9999,9998000,1998000
+cover_s1,103,Prairie Roadworks,bid,1,10530,4799,2320,690,0,end_turn,,9999,9994000,1996000
+cover_s1,103,Summit Grading,bid,1,5421,4841,1112,954,0,end_turn,,9999,9998000,1998000
+cover_s1,103,Granite Ridge Construction,bid,1,7905,4496,1692,691,0,end_turn,,9999,9998000,1998000
+cover_s1,103,Northfield Paving,bid,1,5875,4622,1275,688,0,end_turn,,9998,9994000,1998000
+cover_s1,104,Summit Grading,message,1,4094,4582,770,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,104,Lakeshore Asphalt,message,1,6405,4733,1233,999,0,end_turn,,9999,9998000,1999000
+cover_s1,104,Lakeshore Asphalt,bid,1,9000,4881,1985,949,0,end_turn,,9999,9998000,1998000
+cover_s1,104,Riverbend Surfacing,bid,1,6640,4693,1434,691,0,end_turn,,9998,9998000,1999000
+cover_s1,104,Prairie Roadworks,bid,1,9281,4867,1853,690,0,end_turn,,9998,9998000,1998000
+cover_s1,104,Summit Grading,bid,1,7686,4823,1471,954,0,end_turn,,9998,9998000,1999000
+cover_s1,104,Granite Ridge Construction,bid,1,9750,4490,2092,691,0,end_turn,,9999,9998000,1998000
+cover_s1,104,Northfield Paving,bid,1,7140,4656,1597,688,0,end_turn,,9998,9998000,1998000
+cover_s1,105,Lakeshore Asphalt,message,1,6610,4625,1334,999,0,end_turn,,9999,9998000,1999000
+cover_s1,105,Summit Grading,message,1,6860,4783,1057,1004,0,end_turn,,9999,9998000,1999000
+cover_s1,105,Lakeshore Asphalt,bid,1,8420,4887,1795,949,0,end_turn,,9998,9998000,1998000
+cover_s1,105,Riverbend Surfacing,bid,1,11515,4724,2399,691,0,end_turn,,9998,9998000,2000000
+cover_s1,105,Prairie Roadworks,bid,1,8422,4875,1857,690,0,end_turn,,9999,9998000,1998000
+cover_s1,105,Summit Grading,bid,1,9312,4927,1808,954,0,end_turn,,9999,9998000,1998000
+cover_s1,105,Granite Ridge Construction,bid,1,7328,4606,1654,691,0,end_turn,,9999,9998000,1998000
+cover_s1,105,Northfield Paving,bid,1,7140,4685,1560,688,0,end_turn,,9999,9998000,1997000
+cover_s1,106,Summit Grading,message,1,3610,4532,626,1004,0,end_turn,,9998,9997000,1997000
+cover_s1,106,Lakeshore Asphalt,message,1,6780,4712,1383,999,0,end_turn,,9999,9998000,1999000
+cover_s1,106,Lakeshore Asphalt,bid,1,8360,4864,1829,949,0,end_turn,,9999,9998000,1998000
+cover_s1,106,Riverbend Surfacing,bid,1,7578,4841,1609,691,0,end_turn,,9999,9998000,1998000
+cover_s1,106,Prairie Roadworks,bid,1,9359,4876,1993,690,0,end_turn,,9999,9998000,1998000
+cover_s1,106,Summit Grading,bid,1,9172,4783,1930,954,0,end_turn,,9999,9998000,1998000
+cover_s1,106,Granite Ridge Construction,bid,1,7500,4519,1696,691,0,end_turn,,9998,9998000,1998000
+cover_s1,106,Northfield Paving,bid,1,6828,4649,1502,688,0,end_turn,,9998,9997000,1999000
+cover_s1,107,Lakeshore Asphalt,message,1,5969,4639,1215,999,0,end_turn,,9998,9998000,1999000
+cover_s1,107,Summit Grading,message,1,10125,4742,1991,1004,0,end_turn,,9999,9998000,1997000
+cover_s1,107,Lakeshore Asphalt,bid,1,9703,4892,2025,949,0,end_turn,,9998,9998000,1998000
+cover_s1,107,Riverbend Surfacing,bid,1,11640,4766,2312,691,0,end_turn,,9999,9998000,1998000
+cover_s1,107,Prairie Roadworks,bid,1,8905,4817,1861,690,0,end_turn,,9999,9998000,1998000
+cover_s1,107,Summit Grading,bid,1,7984,4883,1748,954,0,end_turn,,9999,9998000,1997000
+cover_s1,107,Granite Ridge Construction,bid,1,10530,4618,2181,691,0,end_turn,,9998,9998000,1996000
+cover_s1,107,Northfield Paving,bid,1,8437,4587,1783,688,0,end_turn,,9999,9998000,1998000
+cover_s1,108,Summit Grading,message,1,5780,4593,962,1004,0,end_turn,bad_json,9998,9998000,1999000
+cover_s1,108,Lakeshore Asphalt,message,1,6437,4584,1258,999,0,end_turn,,9999,9998000,1999000
+cover_s1,108,Lakeshore Asphalt,bid,1,10625,4687,2236,949,0,end_turn,,9998,9998000,1999000
+cover_s1,108,Riverbend Surfacing,bid,1,7859,4791,1648,691,0,end_turn,,9999,9998000,1998000
+cover_s1,108,Prairie Roadworks,bid,1,12344,4908,2162,690,0,end_turn,,9999,9996000,1998000
+cover_s1,108,Summit Grading,bid,1,5125,4692,1052,954,0,end_turn,,9999,9998000,1997000
+cover_s1,108,Granite Ridge Construction,bid,1,11625,4605,2100,691,0,end_turn,,9999,9996000,1998000
+cover_s1,108,Northfield Paving,bid,1,7811,4569,1748,688,0,end_turn,,9999,9998000,1998000
+cover_s1,109,Lakeshore Asphalt,message,1,8812,4582,1656,999,0,end_turn,bad_json,9998,9998000,1998000
+cover_s1,109,Summit Grading,message,1,5546,4525,939,1004,0,end_turn,bad_json,9999,9998000,1998000
+cover_s1,109,Lakeshore Asphalt,bid,1,8469,4604,1757,949,0,end_turn,,9999,9998000,1998000
+cover_s1,109,Riverbend Surfacing,bid,1,8389,4654,1674,691,0,end_turn,,9999,9998000,1998000
+cover_s1,109,Prairie Roadworks,bid,1,11062,4717,2431,690,0,end_turn,,9999,9998000,1999000
+cover_s1,109,Summit Grading,bid,1,7890,4536,1774,954,0,end_turn,,9999,9998000,1998000
+cover_s1,109,Granite Ridge Construction,bid,1,8000,4634,1721,691,0,end_turn,,9999,9998000,1998000
+cover_s1,109,Northfield Paving,bid,1,13405,4627,2692,688,0,end_turn,,9998,9998000,2000000
+cover_s1,110,Summit Grading,message,1,6250,4471,1085,1004,0,end_turn,bad_json,9999,9998000,1999000
+cover_s1,110,Lakeshore Asphalt,message,1,6030,4560,1179,999,0,end_turn,,9999,9998000,1999000
+cover_s1,110,Lakeshore Asphalt,bid,1,10562,4688,2074,949,0,end_turn,,9999,9998000,1998000
+cover_s1,110,Riverbend Surfacing,bid,1,7844,4583,1661,691,0,end_turn,,9999,9998000,1998000
+cover_s1,110,Prairie Roadworks,bid,1,7859,4727,1643,690,0,end_turn,,9998,9998000,1997000
+cover_s1,110,Summit Grading,bid,1,8250,4595,1772,954,0,end_turn,,9999,9998000,1998000
+cover_s1,110,Granite Ridge Construction,bid,1,9014,4523,1946,691,0,end_turn,,9998,9998000,1998000
+cover_s1,110,Northfield Paving,bid,1,6030,4645,1251,688,0,end_turn,,9999,9996000,1999000

@@ -1,0 +1,333 @@
+{
+  "smoke": {
+    "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_175410_control_s1",
+    "utc": "2026-10-25T17:54:42.912256+00:00",
+    "parsed": 18,
+    "n_bids": 18,
+    "parse_rate": 1.0,
+    "failure_reasons": {},
+    "n_calls": 18,
+    "n_attempts": 18,
+    "mean_latency_s": 9.263333333333334,
+    "min_latency_s": 7.422,
+    "max_latency_s": 12.469,
+    "input_tokens": 15934,
+    "output_tokens": 33971,
+    "cache_creation_input_tokens": 4109,
+    "cache_read_input_tokens": 8218,
+    "mean_input_tokens": 885.2222222222222,
+    "mean_output_tokens": 1887.2777777777778,
+    "cost_usd": 0.019174705
+  },
+  "measured": {
+    "mean_latency_s": 8.6110625,
+    "mean_input_tokens": 1844.375,
+    "mean_output_tokens": 1729.5125,
+    "n_calls": 80,
+    "parse_rate": 1.0,
+    "source": "cover_smoke_postfreeze"
+  },
+  "cover_smoke_prefreeze": {
+    "phase": "prefreeze",
+    "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_175455_cover_s1",
+    "utc": "2026-10-25T17:58:31.162661+00:00",
+    "beta0": 0.9,
+    "cost": {
+      "beta0": 0.9,
+      "beta1": 0.08,
+      "beta2": 0.17,
+      "sigma_eps": 0.05
+    },
+    "frozen_from": null,
+    "cartel_firms": [
+      "Lakeshore Asphalt",
+      "Summit Grading"
+    ],
+    "margins": [
+      {
+        "project_id": 1,
+        "margin_raw": 0.008257720780464722,
+        "margin_excess": -0.01528035645759516
+      },
+      {
+        "project_id": 2,
+        "margin_raw": 0.02789473368452825,
+        "margin_excess": -0.0018140546212701003
+      },
+      {
+        "project_id": 3,
+        "margin_raw": 0.07026132339837607,
+        "margin_excess": 0.03460293919271046
+      },
+      {
+        "project_id": 4,
+        "margin_raw": 0.03312114048003895,
+        "margin_excess": 0.003098479481786251
+      },
+      {
+        "project_id": 5,
+        "margin_raw": 0.0598416103607435,
+        "margin_excess": 0.021023604147822762
+      },
+      {
+        "project_id": 6,
+        "margin_raw": 0.017204741988786663,
+        "margin_excess": -0.01646739812217465
+      },
+      {
+        "project_id": 7,
+        "margin_raw": 0.032629828244230136,
+        "margin_excess": -0.0030759583836688503
+      },
+      {
+        "project_id": 8,
+        "margin_raw": 0.09323292354887219,
+        "margin_excess": 0.04576035789453144
+      },
+      {
+        "project_id": 9,
+        "margin_raw": 0.05129492996625164,
+        "margin_excess": 0.007995825126798174
+      },
+      {
+        "project_id": 10,
+        "margin_raw": 0.05055058991712409,
+        "margin_excess": 0.02576724268553105
+      }
+    ],
+    "n_cover": 10,
+    "median_margin_raw": 0.041835865198581526,
+    "median_margin_excess": 0.005547152304292213,
+    "realized_median_excess_margin_rounded": 0.01,
+    "realized_rule": "inflate",
+    "b_own": 0.13287152328393909,
+    "b_partner": -0.024296673922344976,
+    "fidelity": 1.0,
+    "parsed": 60,
+    "n_bids": 60,
+    "parse_rate": 1.0,
+    "failure_reasons": {},
+    "message_failure_reasons": {},
+    "n_calls": 80,
+    "n_attempts": 80,
+    "mean_latency_s": 8.6131125,
+    "min_latency_s": 3.764,
+    "max_latency_s": 15.703,
+    "input_tokens": 148497,
+    "output_tokens": 138533,
+    "cache_creation_input_tokens": 6626,
+    "cache_read_input_tokens": 59634,
+    "mean_input_tokens": 1856.2125,
+    "mean_output_tokens": 1731.6625,
+    "cost_usd": 0.08554078999999999,
+    "rule_insufficient": false,
+    "stop": null,
+    "warning": null,
+    "scripted_signatures": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\analysis\\20261025_175831\\scripted_signatures.csv",
+    "scripted_seeds": 100,
+    "scripted_extra_margin": 0.01,
+    "scripted_error": null,
+    "history": []
+  },
+  "pilot": {
+    "status": "frozen",
+    "started_utc": "2026-10-25T17:59:14.585740+00:00",
+    "utc": "2026-10-25T18:06:30.070524+00:00",
+    "pilots": [
+      {
+        "beta0": 0.9,
+        "m": 1.301254042478274,
+        "sd": 0.11136318309672412,
+        "winning_mean": 1.2033130561055374,
+        "winning_sd": 0.06756555195486162,
+        "parse_rate": 1.0,
+        "k_frac": 1.375,
+        "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_175914_control_s1"
+      },
+      {
+        "beta0": 0.6487459575217261,
+        "m": 1.0311347199516379,
+        "sd": 0.09834376391477337,
+        "winning_mean": 0.9445603794686056,
+        "winning_sd": 0.07068132235117444,
+        "parse_rate": 1.0,
+        "k_frac": 1.375,
+        "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_180248_control_s1"
+      }
+    ],
+    "calls": [
+      {
+        "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_175914_control_s1",
+        "failure_reasons": {},
+        "n_calls": 120,
+        "n_attempts": 120,
+        "mean_latency_s": 8.806466666666665,
+        "min_latency_s": 6.437,
+        "max_latency_s": 15.11,
+        "input_tokens": 330029,
+        "output_tokens": 216262,
+        "cache_creation_input_tokens": 4109,
+        "cache_read_input_tokens": 78071,
+        "mean_input_tokens": 2750.241666666667,
+        "mean_output_tokens": 1802.1833333333334,
+        "cost_usd": 0.142428235
+      },
+      {
+        "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_180248_control_s1",
+        "failure_reasons": {},
+        "n_calls": 120,
+        "n_attempts": 120,
+        "mean_latency_s": 8.94135,
+        "min_latency_s": 6.14,
+        "max_latency_s": 13.265,
+        "input_tokens": 334545,
+        "output_tokens": 219122,
+        "cache_creation_input_tokens": 4139,
+        "cache_read_input_tokens": 78641,
+        "mean_input_tokens": 2787.875,
+        "mean_output_tokens": 1826.0166666666667,
+        "cost_usd": 0.144319285
+      }
+    ],
+    "frozen_index": 1,
+    "frozen_beta0": 0.6487459575217261,
+    "band": [
+      1.0,
+      1.1
+    ],
+    "target": 1.05,
+    "stop_band": [
+      0.95,
+      1.15
+    ],
+    "comparators": {
+      "all_bids": {
+        "mean": 1.0819,
+        "sd": 0.1837
+      },
+      "winning_bids": {
+        "mean": 1.0031,
+        "sd": 0.1573
+      },
+      "source": "B&Y Table 5, p. 980"
+    },
+    "k_frac": 1.375,
+    "experiment_k_frac": 0.25,
+    "cost_usd": 0.28674752,
+    "frozen_path": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\config\\frozen.json",
+    "decision_logged": true,
+    "history": []
+  },
+  "cover_smoke_postfreeze": {
+    "phase": "postfreeze",
+    "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_180655_cover_s1",
+    "utc": "2026-10-25T18:10:52.557901+00:00",
+    "beta0": 0.6487459575217261,
+    "cost": {
+      "beta0": 0.6487459575217261,
+      "beta1": 0.08,
+      "beta2": 0.17,
+      "sigma_eps": 0.05
+    },
+    "frozen_from": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\config\\frozen.json",
+    "cartel_firms": [
+      "Lakeshore Asphalt",
+      "Summit Grading"
+    ],
+    "margins": [
+      {
+        "project_id": 1,
+        "margin_raw": -0.017450514479033504,
+        "margin_excess": -0.04945759384705141
+      },
+      {
+        "project_id": 2,
+        "margin_raw": 0.015755803935629788,
+        "margin_excess": 0.007077576959231099
+      },
+      {
+        "project_id": 3,
+        "margin_raw": 0.001447559862390125,
+        "margin_excess": -0.009356810170429879
+      },
+      {
+        "project_id": 4,
+        "margin_raw": 0.003028534036120295,
+        "margin_excess": -0.03167776825871942
+      },
+      {
+        "project_id": 5,
+        "margin_raw": 0.019936822093630898,
+        "margin_excess": -0.0033608051812661285
+      },
+      {
+        "project_id": 6,
+        "margin_raw": 0.006742449416181631,
+        "margin_excess": -0.005121016467840423
+      },
+      {
+        "project_id": 7,
+        "margin_raw": 0.008797478725882303,
+        "margin_excess": 0.0009410370312049922
+      },
+      {
+        "project_id": 8,
+        "margin_raw": -0.047862948621929656,
+        "margin_excess": -0.07874324587325374
+      },
+      {
+        "project_id": 9,
+        "margin_raw": 0.011979882120530956,
+        "margin_excess": -0.023119006604261187
+      },
+      {
+        "project_id": 10,
+        "margin_raw": 0.010666542749415715,
+        "margin_excess": -0.004097405491655628
+      }
+    ],
+    "n_cover": 10,
+    "median_margin_raw": 0.0077699640710319675,
+    "median_margin_excess": -0.00723891331913515,
+    "realized_median_excess_margin_rounded": 0.01,
+    "realized_rule": "inflate",
+    "b_own": 0.048224852353895016,
+    "b_partner": 0.03797908853896878,
+    "fidelity": 0.9,
+    "parsed": 60,
+    "n_bids": 60,
+    "parse_rate": 1.0,
+    "failure_reasons": {},
+    "message_failure_reasons": {
+      "bad_json": 1
+    },
+    "n_calls": 80,
+    "n_attempts": 80,
+    "mean_latency_s": 8.6110625,
+    "min_latency_s": 3.234,
+    "max_latency_s": 16.17,
+    "input_tokens": 147550,
+    "output_tokens": 138361,
+    "cache_creation_input_tokens": 6666,
+    "cache_read_input_tokens": 59994,
+    "mean_input_tokens": 1844.375,
+    "mean_output_tokens": 1729.5125,
+    "cost_usd": 0.08536869,
+    "rule_insufficient": false,
+    "stop": null,
+    "warning": null,
+    "scripted_signatures": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\analysis\\20261025_181052\\scripted_signatures.csv",
+    "scripted_seeds": 100,
+    "scripted_extra_margin": 0.01,
+    "scripted_error": null,
+    "history": []
+  },
+  "limits": {
+    "1": {
+      "requests": 10000,
+      "input_tokens": 10000000,
+      "output_tokens": 2000000
+    }
+  },
+  "tier_check_utc": "2026-10-25T18:11:28.064845+00:00"
+}
