@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 from scipy import stats
 
-from src.procurement import analysis
+from src.procurement import analysis, runner as runner_mod
 from src.procurement.analysis import (EMPIRICAL_NULL_COLUMNS, FLAG_RATES_COLUMNS, POWER_COLUMNS,
                                       ROBUSTNESS_COLUMNS, analyze, control_distribution_figure,
                                       control_thresholds, empirical_null_table, flag_rates, main,
@@ -565,3 +565,26 @@ def test_analysis_cli_paths_resolve_against_repo_root(fx, tmp_path, monkeypatch)
     (made,) = list((fake_repo / "results" / "analysis").iterdir())
     assert (made / "flag_rates.csv").is_file() and (fake_repo / "results" / "README.md").is_file()
     assert not (elsewhere / "results").exists()
+
+
+def test_round1_analysis_ignores_other_arms(fx, tmp_path):
+    root = tmp_path / "results" / "runs"
+    shutil.copytree(fx["root"], root)
+    cfg = RunConfig(condition="control", seed=1, T=110, arm="mem0", bidder="synthetic", memory_window=0)
+    with api_guard():
+        run(cfg, runner_mod.bidder_factory_for(cfg), results_root=root)
+    out = tmp_path / "results" / "analysis" / "b"
+    analyze(root, out, include_synthetic=True)
+    for name in ("flag_rates.csv", "empirical_null.csv", "power_vs_T.csv"):
+        assert (out / name).read_text(encoding="utf-8") == (fx["out"] / name).read_text(encoding="utf-8"), name
+    readme = (out / "README.md").read_text(encoding="utf-8")
+    assert "Other arms (see README_round2.md): mem0 (1 run)" in readme
+    assert "control_mem0_s1" not in readme
+
+
+def test_dir_run_ids_arm_aware(tmp_path):
+    for n in ("20261025_223000_control_s1", "20261025_223000_control_mem0_s2",
+              "20261025_223100_cover_stateless_hidden_s3", "20261025_223100_cover_s4_2"):
+        (tmp_path / n).mkdir()
+    assert analysis._dir_run_ids(tmp_path) == {"control_s1", "control_mem0_s2", "cover_stateless_hidden_s3",
+                                               "cover_s4"}

@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.procurement import io
+from src.procurement import analysis, io, runner
 from src.procurement.config import RunConfig
 from src.procurement.evaluation import (PAIR_EVAL_COLUMNS, RUN_EVAL_COLUMNS, a1_rank1, a3_top2, evaluate,
                                         filter_by_fidelity, main, pair_class, select_run_dirs)
@@ -23,7 +23,7 @@ from tests.conftest import api_guard
 
 CONDITIONS = ("control", "cover", "rotation", "markup")
 NAMES = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"]
-RUN_EVAL_EXPECTED = ["run_id", "condition", "scheme", "seed", "run_dir", "complete", "projects_completed",
+RUN_EVAL_EXPECTED = ["run_id", "condition", "arm", "scheme", "seed", "run_dir", "complete", "projects_completed",
                      "fidelity", "realized_rule", "b_own", "b_partner", "n_cover", "median_margin_raw",
                      "median_margin_excess", "cartel_profit", "matched_control_profit", "profit_delta",
                      "verdict_usable_T", "a1_rank1_by_abs_r", "a3_top2", "cartel_r", "cartel_z",
@@ -172,7 +172,7 @@ def test_pair_class_join_uses_seat_map(evaluated):
 def test_evaluate_outputs(evaluated):
     out, pe, re_ = evaluated["out"], evaluated["pair_eval"], evaluated["run_eval"]
     assert RUN_EVAL_COLUMNS == RUN_EVAL_EXPECTED
-    assert PAIR_EVAL_COLUMNS == PAIR_STATS_COLUMNS + ["condition", "scheme", "seed", "cartel_seats",
+    assert PAIR_EVAL_COLUMNS == PAIR_STATS_COLUMNS + ["condition", "arm", "scheme", "seed", "cartel_seats",
                                                       "pair_class"]
     assert list(re_.columns) == RUN_EVAL_COLUMNS and list(pe.columns) == PAIR_EVAL_COLUMNS
     assert list(_read_csv(out / "run_eval.csv").columns) == RUN_EVAL_COLUMNS
@@ -629,3 +629,56 @@ def test_selection_by_bidder_cost_and_T(evaluated, tmp_path):
     _, re_ = evaluate(root, tmp_path / "o6", include_synthetic=True, frozen_path=tmp_path / "x.json",
                       plan_path=tmp_path / "y.json")
     assert len(re_) == 2
+
+
+def test_evaluation_groups_by_arm(tmp_path):
+    root = tmp_path / "runs"
+    for arm in ("base", "mem0"):
+        cfg = RunConfig(condition="control", seed=1, T=110, burn_in=10, arm=arm, bidder="synthetic",
+                        memory_window=0 if arm == "mem0" else 10, scratchpad_enabled=arm == "base")
+        d = runner.run(cfg, runner.bidder_factory_for(cfg), results_root=root)
+        detect_run(d, T=110, N=6, burn_in=10)
+    pe, re_ = evaluate(root, tmp_path / "out", include_synthetic=True)
+    assert sorted(re_["run_id"]) == ["control_mem0_s1", "control_s1"]
+    assert dict(zip(re_["run_id"], re_["arm"])) == {"control_s1": "base", "control_mem0_s1": "mem0"}
+    by_arm = analysis.control_thresholds_by_arm(pe)
+    assert set(by_arm) == {"base", "mem0"}
+    prim = pe[(pe["spec"] == "tag") & (pe["primary"] == 1)]
+    for arm in by_arm:  # each arm's threshold is the p95 of its own pairs only
+        F = prim.loc[prim["arm"] == arm, "F"].astype(float)
+        assert by_arm[arm][("tag", "A3")] == pytest.approx(np.percentile(F.dropna(), 95))
+
+
+def test_scheme_run_pairs_with_its_own_arm_control(tmp_path):
+    root = tmp_path / "runs"
+    for cond in ("control", "cover"):
+        for arm in ("base", "mem0"):
+            cfg = RunConfig(condition=cond, seed=1, T=14, burn_in=10, arm=arm, bidder="synthetic",
+                            memory_window=0 if arm == "mem0" else 10, scratchpad_enabled=arm == "base")
+            runner.run(cfg, runner.bidder_factory_for(cfg), results_root=root)
+    _, re_ = evaluate(root, tmp_path / "out", include_synthetic=True)
+    assert set(re_["run_id"]) == {"control_s1", "control_mem0_s1", "cover_s1", "cover_mem0_s1"}
+    # each cover run's matched control is the control of its own arm: re-evaluating with the other
+    # arm's control removed leaves the matched-control profit of the surviving pairing unchanged
+    root2 = tmp_path / "runs2"
+    root2.mkdir()
+    keep = [d for d in root.iterdir() if "control_mem0" not in d.name]
+    for d in keep:
+        shutil.copytree(d, root2 / d.name)
+    _, re2 = evaluate(root2, tmp_path / "out2", include_synthetic=True)
+    a = dict(zip(re_["run_id"], re_["matched_control_profit"]))
+    b = dict(zip(re2["run_id"], re2["matched_control_profit"]))
+    assert a["cover_s1"] == b["cover_s1"]
+    assert not _empty(a["cover_mem0_s1"]) and _empty(b["cover_mem0_s1"])
+
+
+def test_round1_meta_evaluates_as_base(evaluated, tmp_path):
+    root = tmp_path / "runs"
+    d = _copy_run(evaluated["dirs"]["control"], root)
+    meta = json.loads((d / "run_meta.json").read_text(encoding="utf-8"))
+    for k in ("arm", "bidder_info"):
+        meta.pop(k, None)
+    (d / "run_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    pe, re_ = evaluate(root, tmp_path / "out", include_synthetic=True)
+    assert set(re_["arm"]) == {"base"} and set(pe["arm"]) == {"base"}
+    assert list(re_["run_id"]) == ["control_s1"]

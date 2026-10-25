@@ -108,15 +108,23 @@ def _n_firms(rows: pd.DataFrame) -> int:
 
 # ------------------------------------------------------------------ thresholds and flag rates
 
-def control_thresholds(pair_eval: pd.DataFrame) -> dict[tuple[str, str], float]:
-    """Empirical thresholds {(spec, "A1"|"A3"): p95} from complete control runs' primary rows only
-    (``detector.empirical_thresholds``); {} when there is no complete control run."""
+def control_thresholds(pair_eval: pd.DataFrame, arm: str = "base") -> dict[tuple[str, str], float]:
+    """Empirical thresholds {(spec, "A1"|"A3"): p95} from complete control runs of ``arm`` (primary rows
+    only, ``detector.empirical_thresholds``); {} when there is no complete control run of that arm."""
     if pair_eval.empty:
         return {}
-    ctrl = _primary_complete(pair_eval[pair_eval["condition"] == "control"])
+    ctrl = _primary_complete(pair_eval[(pair_eval["condition"] == "control") & (pair_eval["arm"] == arm)])
     if ctrl.empty:
         return {}
     return {k: v for k, v in detector.empirical_thresholds(ctrl).items() if not math.isnan(v)}
+
+
+def control_thresholds_by_arm(pair_eval: pd.DataFrame) -> dict[str, dict]:
+    """``control_thresholds`` per arm present among the control rows; arms never mix."""
+    if pair_eval.empty:
+        return {}
+    arms = sorted(set(pair_eval.loc[pair_eval["condition"] == "control", "arm"].astype(str)))
+    return {a: control_thresholds(pair_eval, a) for a in arms}
 
 
 def _masks(g: pd.DataFrame, spec: str, threshold: str, thresholds: dict) -> dict | None:
@@ -478,7 +486,7 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
                    figure: dict, excluded: list[dict], calibration: dict | None, scripted_given: bool,
                    results_root=None, analysis_dir=None, stop_reasons: dict | None = None,
                    missing_runs: list[dict] | None = None, input_notes: list[str] | None = None,
-                   calibration_problem: str | None = None) -> str:
+                   calibration_problem: str | None = None, other_arms: dict | None = None) -> str:
     """``results/README.md``: every number the paper needs (step-4 audit Part 4.2 step 9), 3 decimals.
     ``missing_runs`` ([{"run_id", "reason"}]) are runs without any directory (STOP.json
     ``runs_not_started``, plan rows never launched); ``input_notes`` go under "Not computed";
@@ -493,6 +501,9 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
 
     # ---- run inventory
     L += ["## Run inventory", ""]
+    if other_arms:
+        L += ["Other arms (see README_round2.md): "
+              + ", ".join(f"{a} ({n} run{'s' if n != 1 else ''})" for a, n in sorted(other_arms.items())), ""]
     re_ = run_eval if run_eval is not None else pd.DataFrame(columns=evaluation.RUN_EVAL_COLUMNS)
     if len(re_):
         rank = {c: k for k, c in enumerate(CONDITION_ORDER)}
@@ -774,18 +785,18 @@ def read_json_object(path) -> tuple[dict | None, str | None]:
     return data, None
 
 
-_RUN_DIR_NAME = re.compile(r"_(?P<cond>[a-z]+)_s(?P<seed>\d+)(?:_\d+)?$")
+_RUN_DIR_NAME = re.compile(r"_(?P<cond>[a-z]+)(?:_(?P<arm>[a-z][a-z0-9_]*?))?_s(?P<seed>\d+)(?:_\d+)?$")
 
 
 def _dir_run_ids(results_root) -> set[str]:
-    """``<condition>_s<seed>`` of every directory under the results root, from its name."""
+    """run_id (``config.run_id_of``, arm-aware) of every directory under the results root, from its name."""
     root = Path(results_root)
     out = set()
     if root.is_dir():
         for d in root.iterdir():
             m = _RUN_DIR_NAME.search(d.name) if d.is_dir() else None
             if m:
-                out.add(config.run_id_of(m['cond'], int(m['seed'])))
+                out.add(config.run_id_of(m["cond"], int(m["seed"]), m["arm"] or "base"))
     return out
 
 
@@ -832,6 +843,12 @@ def analyze(results_root, out_dir, scripted_csv=None, *, include_synthetic: bool
     eval_dir = out_dir / "evaluation"
     pair_eval, run_eval = evaluation.evaluate(results_root, eval_dir, include_synthetic=include_synthetic,
                                               frozen_path=frozen_path, plan_path=plan_path)
+    other_arms: dict[str, int] = {}
+    for a in (run_eval["arm"].astype(str) if len(run_eval) else []):
+        if a != "base":
+            other_arms[a] = other_arms.get(a, 0) + 1
+    pair_eval = pair_eval[pair_eval["arm"] == "base"].reset_index(drop=True)
+    run_eval = run_eval[run_eval["arm"] == "base"].reset_index(drop=True)
     excluded = json.loads((eval_dir / "excluded_runs.json").read_text(encoding="utf-8"))
 
     thresholds = control_thresholds(pair_eval)
@@ -867,7 +884,7 @@ def analyze(results_root, out_dir, scripted_csv=None, *, include_synthetic: bool
                           calibration=calibration, scripted_given=scripted is not None,
                           results_root=results_root.as_posix(), analysis_dir=out_dir.as_posix(),
                           stop_reasons=stop_reasons, missing_runs=absent, input_notes=input_notes,
-                          calibration_problem=cal_problem)
+                          calibration_problem=cal_problem, other_arms=other_arms)
     for path in (out_dir / "README.md", results_root.parent / "README.md"):
         path.write_text(text, encoding="utf-8", newline="\n")
     return out_dir

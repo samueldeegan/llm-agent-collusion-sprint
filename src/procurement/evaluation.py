@@ -28,8 +28,8 @@ import pandas as pd
 from src.procurement import config, detector, fidelity as fid, io
 from src.procurement.io import PAIR_STATS_COLUMNS
 
-PAIR_EVAL_COLUMNS = PAIR_STATS_COLUMNS + ["condition", "scheme", "seed", "cartel_seats", "pair_class"]
-RUN_EVAL_COLUMNS = ["run_id", "condition", "scheme", "seed", "run_dir", "complete", "projects_completed",
+PAIR_EVAL_COLUMNS = PAIR_STATS_COLUMNS + ["condition", "arm", "scheme", "seed", "cartel_seats", "pair_class"]
+RUN_EVAL_COLUMNS = ["run_id", "condition", "arm", "scheme", "seed", "run_dir", "complete", "projects_completed",
                     "fidelity", "realized_rule", "b_own", "b_partner", "n_cover", "median_margin_raw",
                     "median_margin_excess", "cartel_profit", "matched_control_profit", "profit_delta",
                     "verdict_usable_T", "a1_rank1_by_abs_r", "a3_top2", "cartel_r", "cartel_z",
@@ -46,7 +46,7 @@ DEFAULT_PLAN = "config/run_plan.json"
 
 _RUN_EVAL_INT = ("seed", "complete", "projects_completed", "n_cover", "verdict_usable_T", "a1_rank1_by_abs_r",
                  "a3_top2", "n_missing_bids")
-_RUN_EVAL_STR = ("run_id", "condition", "scheme", "run_dir", "realized_rule")
+_RUN_EVAL_STR = ("run_id", "condition", "arm", "scheme", "run_dir", "realized_rule")
 
 
 # ------------------------------------------------------------------ pair classes and verdicts
@@ -197,7 +197,7 @@ def _settings_problem(meta: dict, include_synthetic: bool, frozen_cost: dict | N
 
 def select_run_dirs(results_root, *, include_synthetic: bool = False, frozen_cost: dict | None = None,
                     allowed_T: set[int] | None = None) -> tuple[dict[str, Path], list[dict]]:
-    """Experiment run directories directly under ``results_root``, one per run_id ``<condition>_s<seed>``.
+    """Experiment run directories directly under ``results_root``, one per run_id (``config.run_id_of``: ``<condition>_s<seed>`` or ``<condition>_<arm>_s<seed>``).
 
     Every immediate subdirectory is considered. Skipped, each with a reason: a directory without a
     readable ``run_meta.json`` object (or without condition and seed), one whose ``purpose`` is not
@@ -332,6 +332,7 @@ def _pair_eval(rec: dict) -> pd.DataFrame:
     names = fid.cartel_names(meta)
     ps["complete"] = (pd.to_numeric(ps["complete"]).astype("Int64") * int(_finished(meta))).astype("Int64")
     ps["condition"] = meta["condition"]
+    ps["arm"] = config.arm_of_meta(meta)
     ps["scheme"] = _scheme(meta)
     ps["seed"] = pd.array([int(meta["seed"])] * len(ps), dtype="Int64")
     ps["cartel_seats"] = ";".join(str(int(s)) for s in meta.get("cartel_seats") or [])
@@ -345,8 +346,8 @@ def _run_eval(run_id: str, rec: dict, control: dict | None) -> dict:
     scheme = _scheme(meta)
     names = fid.cartel_names(meta)
     row = {c: None for c in RUN_EVAL_COLUMNS}
-    row.update(run_id=run_id, condition=meta["condition"], scheme=scheme, seed=int(meta["seed"]),
-               run_dir=rec["dir"].name, complete=int(_finished(meta) and _pair_stats_complete(rec)),
+    row.update(run_id=run_id, condition=meta["condition"], arm=config.arm_of_meta(meta), scheme=scheme,
+               seed=int(meta["seed"]), run_dir=rec["dir"].name, complete=int(_finished(meta) and _pair_stats_complete(rec)),
                projects_completed=int(bids["project_id"].nunique()), realized_rule="n/a",
                n_missing_bids=int(bids["bid"].isna().sum()))
     post = bids[(bids["project_id"] > burn_in) & bids["bid"].notna()]
@@ -432,13 +433,14 @@ def evaluate(results_root, out_dir, *, include_synthetic: bool = False, frozen_p
             loaded[run_id] = _load(d)
         except _Unusable as exc:
             skipped.append({"dir": str(d), "reason": f"{run_id}: {exc}"})
-    order = sorted(loaded, key=lambda r: (loaded[r]["meta"]["condition"], int(loaded[r]["meta"]["seed"])))
+    order = sorted(loaded, key=lambda r: (loaded[r]["meta"]["condition"], config.arm_of_meta(loaded[r]["meta"]),
+                                          int(loaded[r]["meta"]["seed"])))
 
     pair_frames, run_rows = [], []
     for run_id in order:
         rec = loaded[run_id]
         pair_frames.append(_pair_eval(rec))
-        control = loaded.get(config.run_id_of("control", rec['meta']['seed']))
+        control = loaded.get(config.run_id_of("control", rec["meta"]["seed"], config.arm_of_meta(rec["meta"])))
         run_rows.append(_run_eval(run_id, rec, control if rec["meta"]["condition"] != "control" else None))
     pair_eval = (pd.concat(pair_frames, ignore_index=True) if pair_frames
                  else pd.DataFrame(columns=PAIR_EVAL_COLUMNS))
