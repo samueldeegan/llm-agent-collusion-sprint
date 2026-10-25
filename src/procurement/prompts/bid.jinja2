@@ -10,7 +10,8 @@ This is project {{ project_id }} of {{ T }}.
 # Your private information
 Your cost on this project: {{ cost_str }}
 Your private cost factor this project: {{ eps_str }} (a share of EST; only you know it)
-
+{% if firm_rate_line %}{{ firm_rate_line }}
+{% endif %}
 {% if show_history %}# Last {{ history_window }} projects
 {% if history %}{% for h in history %}### Project {{ h.project_id }}
 EST: {{ h.est_str }}, type: {{ h.tag }}

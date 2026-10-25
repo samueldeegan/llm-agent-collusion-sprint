@@ -413,3 +413,45 @@ def test_bid_schema_variants():
     assert '"scratch_pad_update"' not in bid_schema(no_pad) and '"new_memory"' in bid_schema(no_pad)
     both = dataclasses.replace(base, memory_window=0, scratchpad_enabled=False)
     assert bid_schema(both) == '{"reflection": "<string>", "plan": "<string>", "bid": <number, dollars>}'
+
+
+def test_hidden_prompt_has_no_cost_numbers(env):
+    fx = fixture_inputs(env)
+    shown_cfg = fixture_cfg()
+    hid_cfg = dataclasses.replace(shown_cfg, bidder_info="hidden")
+    s_sys, s_user = render_outsider_prompt_for_test(shown_cfg, env, 2, 14, fx["history"], "control")
+    h_sys, h_user = render_outsider_prompt_for_test(hid_cfg, env, 2, 14, fx["history"], "control")
+    c = shown_cfg.cost
+    for token in (repr(c.beta0), repr(c.beta1), repr(c.beta2), "+0.05", "+0.08", "-0.05", "built the same way"):
+        assert token in s_sys + s_user and token not in h_sys + h_user
+    assert "Your firm rate: " + f"{env.eta[2]:+.4f} (a share of EST; permanent)" in h_user
+    for i in range(6):
+        if i != 2:
+            assert f"{env.eta[i]:+.4f}" not in h_user
+    assert "Firm rate" not in h_user and "Firm rate" in s_user
+    assert "DIST (mi)" in h_user and "CAP" in h_user
+    assert sections_of(h_sys) == sections_of(s_sys) and sections_of(h_user) == sections_of(s_user)
+    assert "K is given in each posting" in h_sys and "random draw for each firm and project that only you know" in h_sys
+    from src.procurement.render import HIDDEN_COST_SECTION
+    assert HIDDEN_COST_SECTION in h_sys and HIDDEN_COST_SECTION.startswith("# How costs work\n")
+    assert "Your firm rate" not in s_user
+
+
+def test_shown_prompt_unchanged(env):
+    cfg, fx = dataclasses.replace(fixture_cfg(), bidder_info="shown"), fixture_inputs(env)
+    system, user = render_outsider_prompt_for_test(cfg, env, fx["seat"], fx["t"], fx["history"], "control",
+                                                   memory=fx["memory"], scratchpad=fx["scratchpad"])
+    d = Path(__file__).parent / "fixtures"
+    for name, got in (("system", system), ("user", user)):
+        with open(d / f"base_prompt_seat2_p15.{name}.txt", encoding="utf-8", newline="") as f:
+            assert got == f.read()
+
+
+def test_pre_posting_show_rates_flag(env):
+    caps = np.zeros(6)
+    on = render_pre_posting(env, 0, caps, env.names)
+    off = render_pre_posting(env, 0, caps, env.names, show_rates=False)
+    assert on == render_pre_posting(env, 0, caps, env.names, show_rates=True)
+    assert on.splitlines()[7] == f"{'Firm':<28}{'DIST (mi)':>10}{'CAP':>8}{'Firm rate':>11}"
+    assert off.splitlines()[7] == f"{'Firm':<28}{'DIST (mi)':>10}{'CAP':>8}"
+    assert all(len(r) == 46 for r in off.splitlines()[8:])

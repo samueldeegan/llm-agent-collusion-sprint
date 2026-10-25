@@ -96,6 +96,21 @@ def _cost_section(cfg: RunConfig) -> str:
     )
 
 
+HIDDEN_COST_SECTION = (
+    "# How costs work\n"
+    "Your cost on a project is a share of the engineer's estimate (EST). It rises with the distance in "
+    "miles from your yard to the site, and with CAP, the EST dollars you have won so far divided by K "
+    "(K is given in each posting), so winning more work raises your later costs. Each firm has its own "
+    "permanent firm rate. The project type shifts cost for every firm. A private factor, a random draw "
+    "for each firm and project that only you know, moves your cost up or down."
+)
+
+
+def _cost_text(cfg: RunConfig) -> str:
+    """The cost section the bidder sees: the formula when shown, the qualitative paragraph when hidden."""
+    return HIDDEN_COST_SECTION if cfg.bidder_info == "hidden" else _cost_section(cfg)
+
+
 def _resolve_pair(cfg: RunConfig, seat: int, partner: int, seats: tuple[int, int] | None) -> tuple[int, int]:
     pair = seats or cfg.cartel_seats or config.cartel_seats(cfg.seed, cfg.condition)
     if pair is None or set(pair) != {seat, partner}:
@@ -124,7 +139,7 @@ def _cartel_block(cfg: RunConfig, env: Environment, seat: int, scheme: str, part
 
 def _system(cfg: RunConfig, env: Environment, seat: int, scheme: str | None, partner_name: str | None,
             seats: tuple[int, int] | None, output_format: str) -> str:
-    sections = [_introduction(env, seat), _market_rules(cfg), _cost_section(cfg)]
+    sections = [_introduction(env, seat), _market_rules(cfg), _cost_text(cfg)]
     if scheme is not None:
         sections.append(_cartel_block(cfg, env, seat, scheme, partner_name, seats))
     sections.append(output_format)
@@ -195,6 +210,8 @@ def _variables(ctx: BidContext, posting_pre: str) -> dict:
                      if member else None),
         "role_line": role_line,
         "partner": partner,
+        "firm_rate_line": (f"Your firm rate: {env.eta[ctx.seat]:+.4f} (a share of EST; permanent)"
+                           if cfg.bidder_info == "hidden" else ""),
     }
 
 
@@ -228,5 +245,6 @@ def render_outsider_prompt_for_test(cfg: RunConfig, env: Environment, seat: int,
     caps = np.zeros(cfg.N)
     ctx = BidContext(run=cfg, env=env, t=t, seat=seat, cap=caps, cost=cost_of(env, cfg.cost, seat, t, 0.0),
                      history=history, messages=[], memory=list(memory or []), scratchpad=scratchpad,
-                     role=None, seats=None, posting=render_pre_posting(env, t, caps, env.names))
+                     role=None, seats=None, posting=render_pre_posting(env, t, caps, env.names,
+                                                show_rates=(cfg.bidder_info == "shown")))
     return build_system_prefix(cfg, env, seat, None, None), build_bid_user_message(ctx, ctx.posting)
