@@ -390,7 +390,7 @@ All files per run in `results/runs/<UTC yyyymmdd_HHMMSS>_<condition>_s<seed>/`. 
 
 **`messages.csv`**: run_id, project_id, order (int 1/2), sender (firm_id), recipient (firm_id), my_cost (float or empty), intended_serious_bid (float or empty), text (str, ≤ 500 chars), reason (str, empty if parsed). Header only in control runs.
 
-**`calls.csv`**: run_id, project_id, firm_id, phase (bid / message), attempt (int), latency_ms (int), input_tokens, output_tokens, cache_read_input_tokens (ints or empty), stop_reason (str or empty), reason (str: empty / truncated / no_text / bad_json / no_bid_key / bad_value / transport_failed / http_<code>), ratelimit_requests_remaining, ratelimit_input_tokens_remaining, ratelimit_output_tokens_remaining (ints or empty).
+**`calls.csv`**: run_id, project_id, firm_id, phase (bid / message), attempt (int), latency_ms (int), input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens (ints or empty), stop_reason (str or empty), reason (str: empty / truncated / no_text / bad_json / no_bid_key / bad_value / transport_failed / http_<code>), ratelimit_requests_remaining, ratelimit_input_tokens_remaining, ratelimit_output_tokens_remaining (ints or empty).
 
 **`run_meta.json`**: purpose (experiment / smoke / cover_smoke / pilot), condition, scheme, seed, T, burn_in, cartel_seats [a, b] or [], seat_to_firm {seat: name}, cost {beta0, beta1, beta2, sigma_eps, K, season_total_est}, windows {history 20, memory 10}, model "claude-haiku-5-5", max_tokens 8000, effort "default (medium)", bidder, concurrency, api_key_slot (1 or 2), frozen_from "config/frozen.json" or null, limits {requests, input_tokens, output_tokens} as read at tier check, started_utc, finished_utc, git_commit.
 
