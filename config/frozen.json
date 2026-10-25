@@ -1,0 +1,32 @@
+{
+  "cost": {
+    "beta0": 0.6487459575217261,
+    "beta1": 0.08,
+    "beta2": 0.17,
+    "sigma_eps": 0.05
+  },
+  "pilot_history": [
+    {
+      "beta0": 0.9,
+      "m": 1.301254042478274,
+      "sd": 0.11136318309672412,
+      "winning_mean": 1.2033130561055374,
+      "winning_sd": 0.06756555195486162,
+      "parse_rate": 1.0,
+      "k_frac": 1.375,
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_175914_control_s1"
+    },
+    {
+      "beta0": 0.6487459575217261,
+      "m": 1.0311347199516379,
+      "sd": 0.09834376391477337,
+      "winning_mean": 0.9445603794686056,
+      "winning_sd": 0.07068132235117444,
+      "parse_rate": 1.0,
+      "k_frac": 1.375,
+      "run_dir": "C:\\Users\\samue\\PycharmProjects\\llm-agent-collusion\\results\\calibration_runs\\20261025_180248_control_s1"
+    }
+  ],
+  "frozen_utc": "2026-10-25T18:06:30.047393+00:00",
+  "git_commit": "c17b84c9c0e2ab0888754daae5419c4220f4446c"
+}
