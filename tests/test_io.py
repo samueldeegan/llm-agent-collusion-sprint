@@ -1,10 +1,12 @@
 import json
 import math
+import threading
 from datetime import datetime, timezone
 
 import numpy as np
 import pytest
 
+from src.procurement import io as io_mod
 from src.procurement.io import (BIDS_COLUMNS, TRUTH_COLUMNS, MESSAGES_COLUMNS, CALLS_COLUMNS,
                                 PAIR_STATS_COLUMNS, new_run_dir, write_csv, append_csv_row, read_bids,
                                 write_run_meta, read_run_meta, write_heartbeat, touch_activity,
@@ -140,6 +142,64 @@ def test_touch_activity_creates_missing(tmp_path):
     hb = json.loads((tmp_path / "heartbeat.json").read_text(encoding="utf-8"))
     assert hb["last_completed_project"] == 0 and hb["last_completed_utc"] is None
     assert hb["last_activity_utc"].endswith("+00:00")
+
+
+def test_touch_activity_is_thread_safe(tmp_path):
+    """Six threads touching (as six bidder threads do on every attempt) plus heartbeat writes from the
+    loop: no exception, and the file is always a valid, complete heartbeat."""
+    write_heartbeat(tmp_path, 7, NOW, NOW)
+    errors = []
+    start = threading.Barrier(7)
+
+    def toucher():
+        start.wait()
+        for _ in range(40):
+            try:
+                touch_activity(tmp_path)
+            except Exception as e:  # noqa: BLE001
+                errors.append(e)
+
+    def writer():
+        start.wait()
+        for _ in range(40):
+            try:
+                write_heartbeat(tmp_path, 7, NOW, datetime.now(timezone.utc))
+            except Exception as e:  # noqa: BLE001
+                errors.append(e)
+
+    threads = [threading.Thread(target=toucher) for _ in range(6)] + [threading.Thread(target=writer)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert errors == []
+    hb = json.loads((tmp_path / "heartbeat.json").read_text(encoding="utf-8"))
+    assert hb["last_completed_project"] == 7 and hb["last_completed_utc"] == NOW.isoformat()
+    assert not (tmp_path / "heartbeat.json.tmp").exists()
+
+
+def test_atomic_write_retries_transient_permission_error(tmp_path, monkeypatch):
+    real_replace = io_mod.os.replace
+    failures = []
+
+    def flaky(src, dst):
+        if len(failures) < 3:  # Windows: the target is briefly open in another handle
+            failures.append(1)
+            raise PermissionError(13, "Access is denied")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(io_mod.time, "sleep", lambda s: None)
+    monkeypatch.setattr(io_mod.os, "replace", flaky)
+    write_heartbeat(tmp_path, 3, NOW, NOW)
+    assert len(failures) == 3
+    assert json.loads((tmp_path / "heartbeat.json").read_text(encoding="utf-8"))["last_completed_project"] == 3
+
+    def always(src, dst):
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(io_mod.os, "replace", always)
+    with pytest.raises(PermissionError):  # a persistent failure still surfaces
+        write_heartbeat(tmp_path, 4, NOW, NOW)
 
 
 def test_checkpoint_roundtrip(tmp_path):

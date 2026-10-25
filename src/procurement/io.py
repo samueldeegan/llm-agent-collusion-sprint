@@ -5,6 +5,8 @@ import csv
 import json
 import math
 import os
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -143,13 +145,27 @@ def read_pair_stats(path) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- JSON helpers
 
+_REPLACE_TRIES = 20
+_REPLACE_WAIT_S = 0.025
+
+
 def _atomic_write_text(path: Path, text: str) -> None:
+    """Write ``text`` to a temp file and ``os.replace`` it over ``path``. On Windows the replace fails
+    with PermissionError while another handle (e.g. the launcher reading the heartbeat) has the target
+    open; that is transient, so it is retried for up to ~0.5 s before the error is raised."""
     tmp = path.with_name(path.name + ".tmp")
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(tmp, path)
+    for attempt in range(_REPLACE_TRIES):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == _REPLACE_TRIES - 1:
+                raise
+            time.sleep(_REPLACE_WAIT_S)
 
 
 def _iso(value) -> str | None:
@@ -177,23 +193,31 @@ def read_run_meta(run_dir) -> dict:
 
 # ---------------------------------------------------------------- heartbeat
 
+# touch_activity runs on up to six bidder threads at once (every API attempt start and end) besides
+# the loop's own heartbeat writes; one lock serialises the read-modify-write and the shared temp file.
+_HEARTBEAT_LOCK = threading.RLock()
+
+
 def write_heartbeat(run_dir, last_completed_project, last_completed_utc, last_activity_utc) -> None:
     hb = {"last_completed_project": int(last_completed_project),
           "last_completed_utc": _iso(last_completed_utc),
           "last_activity_utc": _iso(last_activity_utc)}
-    _atomic_write_text(Path(run_dir) / "heartbeat.json", json.dumps(hb, indent=2))
+    with _HEARTBEAT_LOCK:
+        _atomic_write_text(Path(run_dir) / "heartbeat.json", json.dumps(hb, indent=2))
 
 
 def touch_activity(run_dir, now_utc: datetime | None = None) -> None:
-    """Update only ``last_activity_utc``; create the heartbeat (project 0, never completed) if absent."""
-    if now_utc is None:
-        now_utc = datetime.now(timezone.utc)
+    """Update only ``last_activity_utc``; create the heartbeat (project 0, never completed) if absent.
+    Thread-safe."""
     path = Path(run_dir) / "heartbeat.json"
-    if path.exists():
-        hb = json.loads(path.read_text(encoding="utf-8"))
-    else:
-        hb = {"last_completed_project": 0, "last_completed_utc": None}
-    write_heartbeat(run_dir, hb["last_completed_project"], hb["last_completed_utc"], now_utc)
+    with _HEARTBEAT_LOCK:
+        if now_utc is None:
+            now_utc = datetime.now(timezone.utc)
+        if path.exists():
+            hb = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            hb = {"last_completed_project": 0, "last_completed_utc": None}
+        write_heartbeat(run_dir, hb["last_completed_project"], hb["last_completed_utc"], now_utc)
 
 
 # ---------------------------------------------------------------- checkpoint

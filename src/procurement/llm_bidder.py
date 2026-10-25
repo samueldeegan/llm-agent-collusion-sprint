@@ -57,6 +57,7 @@ class LLMBidder:
         self.scratchpad = ""
         self._bid_system: str | None = None
         self._message_system: str | None = None
+        self._prefix_key: tuple | None = None  # (scheme, partner name, seats) the prefixes were built for
 
     # -------------------------------------------------------------- state
 
@@ -86,6 +87,12 @@ class LLMBidder:
 
     def _system(self, ctx: BidContext, phase: str) -> str:
         scheme, partner = self._cartel(ctx)
+        key = (scheme, partner, ctx.seats)
+        if self._prefix_key is None:
+            self._prefix_key = key
+        elif key != self._prefix_key:  # the cached prefixes were built for another cartel setup
+            raise ValueError(f"seat {self.seat}: prefixes cached for (scheme, partner, seats) "
+                             f"{self._prefix_key!r}, got {key!r}")
         if phase == "bid":
             if self._bid_system is None:
                 self._bid_system = build_system_prefix(self.cfg, self.env, self.seat, scheme, partner,
@@ -145,6 +152,10 @@ class LLMBidders:
     def message(self, ctx: BidContext) -> MessageResult:
         return self.seats[ctx.seat].message(ctx)
 
+    def set_activity_hook(self, callback) -> None:
+        """The runner's activity hook (A52): the client calls it at the start and end of every attempt."""
+        self.client.on_attempt = callback
+
     def get_state(self) -> dict:
         return {str(seat): b.get_state() for seat, b in self.seats.items()}
 
@@ -157,7 +168,8 @@ class LLMBidders:
 
 def llm_bidder_factory(cfg: RunConfig, env: Environment, client: HaikuClient | None = None) -> Bidder:
     """The run's LLM bidder: one ``HaikuClient`` (model, max_tokens and key slot from ``cfg``) shared by
-    six per-seat bidders. ``client`` replaces it (tests inject a stub)."""
+    six per-seat bidders. ``client`` replaces it (tests inject a stub). The runner installs its
+    activity callback with ``set_activity_hook`` once the run directory exists."""
     if client is None:
         client = HaikuClient(cfg.model, cfg.max_tokens, cfg.api_key_slot)
     return LLMBidders(cfg, env, client)

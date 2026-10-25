@@ -196,13 +196,16 @@ class HaikuClient:
     def __init__(self, model: str, max_tokens: int, api_key_slot: int = 1,
                  transport: Callable[[dict], tuple[dict, dict]] | None = None,
                  clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep,
-                 jitter_seed: int | None = None):
+                 jitter_seed: int | None = None, on_attempt: Callable[[], None] | None = None):
         if api_key_slot not in KEY_VARS:
             raise ValueError(f"api_key_slot must be 1 or 2, got {api_key_slot!r}")
         self.model, self.max_tokens, self.api_key_slot = model, max_tokens, api_key_slot
         self._transport = transport if transport is not None else _DefaultTransport(KEY_VARS[api_key_slot])
         self._clock, self._sleep = clock, sleep
         self._rng = random.Random(jitter_seed)
+        # Called at the start and end of every attempt (the runner touches heartbeat activity, A52);
+        # may be (re)assigned after construction. Its exceptions are dropped.
+        self.on_attempt = on_attempt
 
     def __repr__(self) -> str:
         return (f"HaikuClient(model={self.model!r}, max_tokens={self.max_tokens}, "
@@ -212,6 +215,24 @@ class HaikuClient:
         return {"model": self.model, "max_tokens": self.max_tokens,
                 "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                 "messages": [{"role": "user", "content": user}]}
+
+    def _ping(self) -> None:
+        """Run ``on_attempt``; a failing callback never breaks the call."""
+        hook = self.on_attempt
+        if hook is None:
+            return
+        try:
+            hook()
+        except Exception:  # noqa: BLE001 - activity is best effort
+            pass
+
+    def _attempt(self, kwargs: dict) -> tuple[dict, dict]:
+        """One transport call, with ``on_attempt`` at its start and end (also when it raises)."""
+        self._ping()
+        try:
+            return self._transport(kwargs)
+        finally:
+            self._ping()
 
     def _record(self, attempt: int, latency_ms: int, reason: str, resp: RawResponse | None,
                 headers: dict | None = None) -> dict:
@@ -242,7 +263,7 @@ class HaikuClient:
             attempt = len(records) + 1
             t0 = self._clock()
             try:
-                body, headers = self._transport(kwargs)
+                body, headers = self._attempt(kwargs)
             except TransportError as err:
                 latency = int((self._clock() - t0) * 1000)
                 records.append(self._record(attempt, latency, _attempt_reason(err), None, err.headers))

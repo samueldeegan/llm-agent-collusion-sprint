@@ -16,7 +16,9 @@ from src.procurement.client import RawResponse
 _PROJECT = re.compile(r"This is project (\d+) of \d+\.")
 _COST = re.compile(r"Your cost on this project: \$([\d,]+)")
 
-DEFAULT_MESSAGE = {"my_cost": 1000000, "intended_serious_bid": 1050000, "message_to_partner": "hi"}
+STUB_MESSAGE_TEXT = "STUB-MSG-7f3a"  # distinctive, so leaks of message text are detectable
+DEFAULT_MESSAGE = {"my_cost": 1000000, "intended_serious_bid": 1050000,
+                   "message_to_partner": STUB_MESSAGE_TEXT}
 
 TRANSPORT_FAILED = None  # override value: create returns (None, [transport_failed record])
 _NO_OVERRIDE = object()
@@ -40,7 +42,8 @@ class StubClient:
     """``replies[(seat, phase, project)]`` overrides one call: a str is the raw reply text,
     None (``TRANSPORT_FAILED``) makes the call missing, an Exception instance is raised. ``delays`` holds
     seconds to sleep inside that call. ``calls`` gets ``(start, end, seat, phase, project)`` per call;
-    ``prompts[(seat, phase, project)]`` the ``(system, user)`` pair sent."""
+    ``prompts[(seat, phase, project)]`` the ``(system, user)`` pair sent. Like ``HaikuClient``, each call
+    (one attempt) runs ``on_attempt`` at its start and end and drops its exceptions."""
 
     def __init__(self, names: list[str] | None = None, replies: dict | None = None,
                  delays: dict | None = None):
@@ -50,6 +53,14 @@ class StubClient:
         self.calls: list[tuple[float, float, int, str, int]] = []
         self.prompts: dict[tuple[int, str, int], tuple[str, str]] = {}
         self.lock = threading.Lock()
+        self.on_attempt = None
+
+    def _ping(self) -> None:
+        if self.on_attempt is not None:
+            try:
+                self.on_attempt()
+            except Exception:  # noqa: BLE001
+                pass
 
     # -------------------------------------------------------------- decoding the prompt
 
@@ -91,6 +102,7 @@ class StubClient:
             return sum(1 for c in self.calls if c[2:] == (seat, phase, project))
 
     def create(self, system: str, user: str):
+        self._ping()
         start = time.perf_counter()
         seat, phase, pid = self.seat_of(system), self.phase_of(user), self.project_of(user)
         key = (seat, phase, pid)
@@ -111,3 +123,4 @@ class StubClient:
             end = time.perf_counter()
             with self.lock:
                 self.calls.append((start, end, seat, phase, pid))
+            self._ping()

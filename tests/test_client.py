@@ -317,6 +317,73 @@ def test_auth_error_is_fatal():
     assert ei.value.records[-1]["reason"] == "http_401"
 
 
+# ---------------------------------------------------------------- activity callback (A52)
+
+def test_on_attempt_at_start_and_end_of_every_attempt():
+    events = []
+
+    def transport(kwargs):
+        events.append("transport")
+        if events.count("transport") <= 2:
+            raise TransportError("server", 503, None, "down")
+        return _api_json(), {}
+
+    ft = FakeTime()
+
+    def sleep(s):
+        events.append("sleep")
+        ft.sleep(s)
+
+    c = HaikuClient("claude-haiku-5-5", 8000, transport=transport, clock=ft.clock, sleep=sleep,
+                    jitter_seed=0, on_attempt=lambda: events.append("ping"))
+    resp, recs = c.create("S", "U")
+    assert resp is not None and len(recs) == 3
+    assert events.count("ping") == 6  # start and end x 3 attempts
+    assert events == ["ping", "transport", "ping", "sleep"] * 2 + ["ping", "transport", "ping"]
+
+
+def test_on_attempt_on_fatal_and_missing_calls():
+    pings = []
+
+    def auth(kwargs):
+        raise TransportError("auth", 401, None, "invalid x-api-key")
+
+    c, _ = _client(auth, on_attempt=lambda: pings.append(1))
+    with pytest.raises(FatalAPIError):
+        c.create("S", "U")
+    assert len(pings) == 2
+
+    def bad_request(kwargs):
+        raise TransportError("client", 400, None, "bad request")
+
+    pings.clear()
+    c, _ = _client(bad_request, on_attempt=lambda: pings.append(1))
+    assert c.create("S", "U")[0] is None and len(pings) == 2
+
+
+def test_on_attempt_errors_are_dropped():
+    calls = []
+
+    def transport(kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise TransportError("rate_limit", 429, 1.0, "slow down")
+        return _api_json('{"bid": 945000.5}'), {}
+
+    def broken():
+        raise OSError("heartbeat disk full")
+
+    plain, _ = _client(transport)
+    want_resp, want_recs = plain.create("S", "U")
+    calls.clear()
+    c, ft = _client(transport, on_attempt=broken)
+    resp, recs = c.create("S", "U")
+    assert resp == want_resp and recs == want_recs and ft.sleeps == [1.0]
+    assert parse_bid(resp)[0] == 945000.5
+    c.on_attempt = broken  # assignable after construction (the runner's hook)
+    assert c.create("S", "U")[0] is not None
+
+
 def test_client_4xx_is_missing_not_retried():
     n = []
 

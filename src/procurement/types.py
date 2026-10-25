@@ -56,7 +56,11 @@ class Bidder(Protocol):
     ``set_state(state) -> None``. The runner stores ``get_state()`` in ``checkpoint.json`` under
     ``"bidder_state"`` after every project and calls ``set_state`` on resume. Defining only one of the
     two raises TypeError at run start; resuming a stateful bidder from a checkpoint without
-    ``bidder_state`` raises ValueError."""
+    ``bidder_state`` raises ValueError.
+
+    Optional activity hook: a bidder that makes API calls defines ``set_activity_hook(callback)``; ``run``
+    installs a callback touching ``heartbeat.json``'s ``last_activity_utc``, to be called at the start
+    and end of every API attempt (spec A52)."""
 
     def bid(self, ctx: BidContext) -> BidResult: ...
 

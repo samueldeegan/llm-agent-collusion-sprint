@@ -4,22 +4,26 @@ Nothing here calls the API: the autouse guard makes constructing an Anthropic cl
 LLM path gets a stub (or a ``HaikuClient`` with a fake transport)."""
 import csv
 import json
+import time
+from dataclasses import replace as dataclasses_replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from src.procurement import llm_bidder
+from src.procurement import config, llm_bidder, texts
 from src.procurement.auction import render_pre_posting
 from src.procurement.client import FatalAPIError, HaikuClient, TransportError
 from src.procurement.config import RunConfig
 from src.procurement.environment import cost_of, generate_environment
 from src.procurement.io import read_checkpoint, read_run_meta
 from src.procurement.llm_bidder import LLMBidder, llm_bidder_factory
+from src.procurement.rules import rotation_roles
 from src.procurement.runner import bidder_factory_for, run, run_in_memory
 from src.procurement.synthetic import synthetic_bidder_factory
 from src.procurement.types import BidContext
-from tests.stubs import TRANSPORT_FAILED, StubClient, ok_record
+from tests.stubs import STUB_MESSAGE_TEXT, TRANSPORT_FAILED, StubClient, ok_record
 
 T = 12
 COVER = RunConfig(condition="cover", seed=1, T=T, burn_in=2, bidder="llm")
@@ -173,7 +177,8 @@ def test_llm_cover_run_files_with_stub(tmp_path):
     bids, msgs, calls = _rows(d / "bids.csv"), _rows(d / "messages.csv"), _rows(d / "calls.csv")
     assert len(bids) == T * 6 and all(r["bid"] != "" for r in bids)
     assert len(msgs) == T * 2 and all(r["reason"] == "" for r in msgs)
-    assert msgs[0]["text"] == "Cost: $1,000,000. If I am the serious bidder I intend to bid $1,050,000. hi"
+    assert msgs[0]["text"] == ("Cost: $1,000,000. If I am the serious bidder I intend to bid $1,050,000. "
+                               + STUB_MESSAGE_TEXT)
     assert len(calls) == len(bids) + len(msgs)
     assert sum(r["phase"] == "bid" for r in calls) == T * 6
     assert sum(r["phase"] == "message" for r in calls) == T * 2
@@ -306,6 +311,127 @@ def test_fatal_api_error_propagates(tmp_path):
     d = _only_dir(tmp_path)
     assert _rows(d / "bids.csv") == []
     assert read_run_meta(d)["finished_utc"] is None
+    calls = _rows(d / "calls.csv")  # the six fatal attempts of the aborted project are still logged
+    assert len(calls) == 6 and {r["reason"] for r in calls} == {"http_401"}
+    assert {r["firm_id"] for r in calls} == set(NAMES) and {r["project_id"] for r in calls} == {"1"}
+
+
+def test_aborted_project_logs_completed_calls(tmp_path):
+    fatal = FatalAPIError("API authentication failed (status 401)",
+                          [dict(ok_record("http_401"), input_tokens=None, output_tokens=None, stop_reason=None)])
+    stub = StubClient(replies={(2, "bid", 3): fatal})  # seat 2: an outsider in cover seed 1
+    with pytest.raises(FatalAPIError):
+        run(COVER, stub_factory(stub), results_root=tmp_path)
+    d = _only_dir(tmp_path)
+    calls = _rows(d / "calls.csv")
+    assert sum(r["project_id"] in ("1", "2") for r in calls) == 2 * 8
+    p3 = [r for r in calls if r["project_id"] == "3"]
+    assert len(p3) == 8  # 2 messages + 5 completed bids + the fatal attempt; nothing lost
+    assert [r["phase"] for r in p3[:2]] == ["message", "message"]
+    assert [r["firm_id"] for r in p3[2:]] == [NAMES[s] for s in range(6)]  # bids by seat
+    (bad,) = [r for r in p3 if r["reason"] != ""]
+    assert (bad["firm_id"], bad["phase"], bad["reason"]) == (NAMES[2], "bid", "http_401")
+    assert stub.count(0, "bid", 3) == stub.count(3, "bid", 3) == 1  # issued calls finished first
+    # nothing else of the aborted project is written
+    assert {r["project_id"] for r in _rows(d / "bids.csv")} == {"1", "2"}
+    assert {r["project_id"] for r in _rows(d / "truth.csv")} == {"1", "2"}
+    assert {r["project_id"] for r in _rows(d / "messages.csv")} == {"1", "2"}
+    assert read_checkpoint(d)["last_completed_project"] == 2
+    assert all("Project 3 (" not in p.read_text(encoding="utf-8") for p in (d / "transcripts").iterdir())
+
+
+# ------------------------------------------------------------------ activity heartbeat (A52)
+
+def _read_json_retry(path: Path) -> dict:
+    for _ in range(50):  # a reader racing os.replace on Windows can see a transient PermissionError
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except PermissionError:
+            time.sleep(0.01)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_activity_touched_on_every_call(tmp_path):
+    cfg = RunConfig(condition="cover", seed=1, T=3, bidder="llm")
+
+    class Probe(StubClient):
+        """Reads the heartbeat as each call returns: its last_activity must postdate the call's start."""
+
+        def __init__(self):
+            keys = [(s, "bid", p) for s in range(6) for p in (1, 2, 3)]
+            keys += [(s, ph, p) for s in SEATS for ph in ("message",) for p in (1, 2, 3)]
+            super().__init__(delays={k: 0.02 for k in keys})
+            self.seen = []
+
+        def create(self, system, user):
+            t0 = datetime.now(timezone.utc)
+            out = super().create(system, user)  # pings on_attempt at its start and end
+            hb = _read_json_retry(_only_dir(tmp_path) / "heartbeat.json")
+            with self.lock:
+                self.seen.append((self.project_of(user), t0, hb))
+            return out
+
+    stub = Probe()
+    d = run(cfg, stub_factory(stub), results_root=tmp_path)
+    assert stub.on_attempt is not None
+    assert len(stub.seen) == 3 * 8
+    for pid, t0, hb in stub.seen:
+        assert datetime.fromisoformat(hb["last_activity_utc"]) > t0  # touched inside the call
+        assert hb["last_completed_project"] == pid - 1
+    hb = json.loads((d / "heartbeat.json").read_text(encoding="utf-8"))  # valid JSON after concurrent touches
+    assert hb["last_completed_project"] == 3 and not (d / "heartbeat.json.tmp").exists()
+
+    mem = StubClient()
+    run_in_memory(cfg, stub_factory(mem))
+    assert mem.on_attempt is None  # no run dir, no callback
+
+
+# ------------------------------------------------------------------ prefix cache guard and isolation
+
+def test_prefix_cache_guard():
+    stub = StubClient(NAMES)
+    b = LLMBidder(COVER, ENV, 0, stub)
+    member = dataclasses_replace(_ctx(COVER, 0, 0), seats=SEATS)
+    b.message(member)
+    b.bid(member)  # same (scheme, partner, seats): reuses the cache
+    with pytest.raises(ValueError, match="prefixes cached"):
+        b.bid(_ctx(COVER, 0, 1))  # now as an outsider
+    other = LLMBidder(COVER, ENV, 0, StubClient(NAMES))
+    other.bid(_ctx(COVER, 0, 0))
+    with pytest.raises(ValueError, match="prefixes cached"):
+        other.message(dataclasses_replace(_ctx(COVER, 0, 1), seats=SEATS))
+
+
+def test_cover_outsider_prompts_isolated(tmp_path):
+    stub = StubClient()
+    d = run(COVER, stub_factory(stub), results_root=tmp_path)
+    for seat, name in enumerate(NAMES):
+        text = (d / "transcripts" / f"{name}.md").read_text(encoding="utf-8")
+        if seat in SEATS:  # positive control: members do see the messages
+            assert STUB_MESSAGE_TEXT in text and "# Messages this project" in text
+            continue
+        for needle in (STUB_MESSAGE_TEXT, "# Messages this project", "# Your role this project"):
+            assert needle not in text, (name, needle)
+    for (seat, phase, _), (system, user) in stub.prompts.items():
+        if seat not in SEATS:
+            assert STUB_MESSAGE_TEXT not in system + user
+
+
+def test_rotation_member_role_lines():
+    cfg = RunConfig(condition="rotation", seed=1, T=4, bidder="llm")
+    a, b = config.cartel_seats(1, "rotation")
+    stub = StubClient()
+    run_in_memory(cfg, stub_factory(stub))
+    for p in range(1, 5):
+        serious, cover = rotation_roles(p, a, b)
+        for seat, role in ((serious, "serious bidder"), (cover, "cover bidder")):
+            other = "cover bidder" if role == "serious bidder" else "serious bidder"
+            for phase in ("bid", "message"):
+                _, user = stub.prompts[(seat, phase, p)]
+                assert texts.ROTATION_ROLE_LINE.format(t=p, role=role) in user, (seat, phase, p)
+                assert texts.ROTATION_ROLE_LINE.format(t=p, role=other) not in user
+        for seat in set(range(6)) - {a, b}:
+            assert "so you are the" not in stub.prompts[(seat, "bid", p)][1]
 
 
 # ------------------------------------------------------------------ state and resume

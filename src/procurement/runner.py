@@ -6,7 +6,7 @@ import csv
 import math
 import re
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -17,6 +17,7 @@ import pandas as pd
 from src.procurement import io
 from src.procurement.auction import AwardLedger, render_post_posting, render_pre_posting, resolve_project
 from src.procurement.channel import Channel
+from src.procurement.client import FatalAPIError
 from src.procurement import config
 from src.procurement.config import RunConfig
 from src.procurement.environment import Environment, cost_of, generate_environment
@@ -197,6 +198,15 @@ class _Loop:
         if self.run_dir is not None:
             io.touch_activity(self.run_dir)
 
+    def install_activity_hook(self) -> None:
+        """Give a bidder that defines ``set_activity_hook`` (the LLM bidder) a callback that touches
+        ``last_activity_utc`` (A52); its client calls it at the start and end of every API attempt, so
+        a retry storm or a serial message phase still shows activity. No run dir: no hook."""
+        hook = getattr(self.bidder, "set_activity_hook", None)
+        if self.run_dir is not None and callable(hook):
+            run_dir = self.run_dir
+            hook(lambda: io.touch_activity(run_dir))
+
     def checkpoint_state(self, last_completed_project: int) -> dict:
         state = {"last_completed_project": last_completed_project, "won": self.ledger.won.copy(),
                  "history": self.history, "messages": self.messages, "run_dir": str(self.run_dir)}
@@ -279,38 +289,74 @@ class _Loop:
                           history=copy.deepcopy(window), messages=copy.deepcopy(messages), memory=[],
                           scratchpad="", role=role, seats=seats, posting=posting)
 
-    def _calls(self, pool: ThreadPoolExecutor, t: int, pid: int, caps, costs, posting: str
+    @staticmethod
+    def _tracked(fn, seat: int, phase: str, ctx: BidContext, done: list):
+        """``fn(ctx)``, appending ``(seat, phase, call records)`` to ``done`` when it returns, or the
+        attempts of a ``FatalAPIError`` when it raises one (logged if the project aborts)."""
+        try:
+            res = fn(ctx)
+        except FatalAPIError as err:
+            done.append((seat, phase, err.records))
+            raise
+        done.append((seat, phase, res.call_records))
+        return res
+
+    def _calls(self, pool: ThreadPoolExecutor, t: int, pid: int, caps, costs, posting: str, done: list
                ) -> tuple[dict[int, BidResult], list[dict], dict[int, MessageResult]]:
         """All model calls of one project (spec A49). Control: one wave of six bids. Scheme: the four
         outsider bids and message 1 are issued together; message 2 when message 1 returns; the two
-        cartel bids when message 2 returns. Results by seat; any exception propagates."""
+        cartel bids when message 2 returns. Results by seat. Any exception propagates once every call
+        already issued has finished, so ``done`` then holds the records of all completed calls."""
         cfg = self.cfg
         window = self.history[-cfg.history_window:] if cfg.history_window > 0 else []
-        if self.seats is None:
-            futures = {seat: pool.submit(self.bidder.bid, self._ctx(t, seat, caps, costs, posting, window,
-                                                                    [], None, None))
-                       for seat in range(cfg.N)}
-            return {seat: futures[seat].result() for seat in range(cfg.N)}, [], {}
+        issued = []
 
-        futures = {}
-        for seat in range(cfg.N):  # outsiders: no messages, no role, no cartel seats
-            if not self.channel.can_message(seat):
-                futures[seat] = pool.submit(self.bidder.bid, self._ctx(t, seat, caps, costs, posting, window,
-                                                                       [], None, None))
-        msg_results: dict[int, MessageResult] = {}
+        def submit(fn, seat: int, phase: str, ctx: BidContext):
+            fut = pool.submit(self._tracked, fn, seat, phase, ctx, done)
+            issued.append(fut)
+            return fut
 
-        def send(seat: int, so_far: list[dict]) -> MessageResult:
-            ctx = self._ctx(t, seat, caps, costs, posting, window, so_far, self._message_role(pid, seat),
-                            self.seats)
-            msg_results[seat] = pool.submit(self.bidder.message, ctx).result()
-            return msg_results[seat]
+        try:
+            if self.seats is None:
+                futures = {seat: submit(self.bidder.bid, seat, "bid",
+                                        self._ctx(t, seat, caps, costs, posting, window, [], None, None))
+                           for seat in range(cfg.N)}
+                return {seat: futures[seat].result() for seat in range(cfg.N)}, [], {}
 
-        rows = self.channel.exchange(pid, send)  # seat ints in sender/recipient
-        roles = self._bid_roles(pid, rows, costs)
-        for seat in self.seats:
-            futures[seat] = pool.submit(self.bidder.bid, self._ctx(t, seat, caps, costs, posting, window,
-                                                                   rows, roles[seat], self.seats))
-        return {seat: futures[seat].result() for seat in range(cfg.N)}, rows, msg_results
+            futures = {}
+            for seat in range(cfg.N):  # outsiders: no messages, no role, no cartel seats
+                if not self.channel.can_message(seat):
+                    futures[seat] = submit(self.bidder.bid, seat, "bid",
+                                           self._ctx(t, seat, caps, costs, posting, window, [], None, None))
+            msg_results: dict[int, MessageResult] = {}
+
+            def send(seat: int, so_far: list[dict]) -> MessageResult:
+                ctx = self._ctx(t, seat, caps, costs, posting, window, so_far, self._message_role(pid, seat),
+                                self.seats)
+                msg_results[seat] = submit(self.bidder.message, seat, "message", ctx).result()
+                return msg_results[seat]
+
+            rows = self.channel.exchange(pid, send)  # seat ints in sender/recipient
+            roles = self._bid_roles(pid, rows, costs)
+            for seat in self.seats:
+                futures[seat] = submit(self.bidder.bid, seat, "bid",
+                                       self._ctx(t, seat, caps, costs, posting, window, rows, roles[seat],
+                                                 self.seats))
+            return {seat: futures[seat].result() for seat in range(cfg.N)}, rows, msg_results
+        except Exception:
+            wait(issued)  # let in-flight calls finish so their records are in ``done``
+            raise
+
+    def _log_aborted_calls(self, pid: int, done: list) -> None:
+        """calls.csv rows of an aborted project's completed calls (and a fatal call's attempts):
+        messages in the order they were sent, then bids by seat. Nothing else of the project is logged."""
+        if self.run_dir is None:
+            return
+        entries = sorted(enumerate(done), key=lambda e: (e[1][1] != "message",
+                                                         e[0] if e[1][1] == "message" else e[1][0]))
+        for _, (seat, phase, records) in entries:
+            for r in _call_rows(self.run_id, pid, self.env.names[seat], phase, records):
+                io.append_csv_row(self.run_dir / "calls.csv", r, io.CALLS_COLUMNS)
 
     # ------------------------------------------------------------ loop
 
@@ -331,7 +377,12 @@ class _Loop:
         posting = render_pre_posting(env, t, caps, env.names)
 
         self._touch()
-        results, exchanged, msg_results = self._calls(pool, t, pid, caps, costs, posting)
+        done: list = []
+        try:
+            results, exchanged, msg_results = self._calls(pool, t, pid, caps, costs, posting, done)
+        except Exception:
+            self._log_aborted_calls(pid, done)
+            raise
         self._touch()
 
         bids = {seat: _clean_bid(results[seat]) for seat in range(cfg.N)}
@@ -526,6 +577,7 @@ def run(cfg: RunConfig, bidder_factory: BidderFactory, results_root: str | Path 
         meta = make_run_meta(cfg, env, limits=limits, frozen_from=frozen_from, purpose=purpose)
         io.write_run_meta(run_dir, meta)
     loop.run_dir = run_dir
+    loop.install_activity_hook()
     if cp is not None:
         now = _utc_now()
         io.write_heartbeat(run_dir, loop.start, now, now)
