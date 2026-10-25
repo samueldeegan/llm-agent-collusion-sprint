@@ -1,6 +1,7 @@
 """The project loop: postings, (message phase), bids, award, logging, heartbeat/checkpoint, STOP."""
 from __future__ import annotations
 
+import copy
 import math
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,7 @@ import pandas as pd
 from src.procurement import io
 from src.procurement.auction import AwardLedger, render_post_posting, render_pre_posting, resolve_project
 from src.procurement.channel import Channel
+from src.procurement import config
 from src.procurement.config import RunConfig
 from src.procurement.environment import Environment, cost_of, generate_environment
 from src.procurement.types import BidContext, Bidder, BidResult
@@ -44,18 +46,33 @@ def _require_control(cfg: RunConfig) -> None:
         raise NotImplementedError("scheme runs: Task 7")
 
 
+def resolve_cartel_seats(cfg: RunConfig) -> tuple[int, int] | None:
+    """The run's cartel pair: ``cfg.cartel_seats`` if set, else the §4f seat rule; None for control."""
+    if cfg.condition == "control":
+        return None
+    seats = cfg.cartel_seats if cfg.cartel_seats is not None else config.cartel_seats(cfg.seed, cfg.condition)
+    if seats is None:
+        raise ValueError(f"no cartel seats for condition {cfg.condition!r}")
+    return int(seats[0]), int(seats[1])
+
+
+def scheme_of(cfg: RunConfig) -> str:
+    """The ``scheme`` value of run_meta and truth.csv: "none" for control, else the condition."""
+    return "none" if cfg.condition == "control" else cfg.condition
+
+
 def make_run_meta(cfg: RunConfig, env: Environment, limits: dict | None = None,
                   frozen_from: str | None = None, purpose: str = "experiment") -> dict:
     """``run_meta.json`` content per spec §4g, with ``finished_utc`` still null."""
-    seats = None if cfg.condition == "control" else cfg.cartel_seats
+    seats = resolve_cartel_seats(cfg)
     return {
         "purpose": purpose,
         "condition": cfg.condition,
-        "scheme": "none" if cfg.condition == "control" else cfg.condition,
+        "scheme": scheme_of(cfg),
         "seed": cfg.seed,
         "T": cfg.T,
         "burn_in": cfg.burn_in,
-        "cartel_seats": [] if seats is None else [int(s) for s in seats],
+        "cartel_seats": [] if seats is None else list(seats),
         "seat_to_firm": {str(i): name for i, name in enumerate(env.names)},
         "cost": {"beta0": cfg.cost.beta0, "beta1": cfg.cost.beta1, "beta2": cfg.cost.beta2,
                  "sigma_eps": cfg.cost.sigma_eps, "K": float(env.K),
@@ -147,8 +164,11 @@ class _Loop:
 
     # ------------------------------------------------------------ phases
 
-    def _message_phase(self, t: int) -> list[dict]:
-        """Cartel exchange for project t (Task 7). A closed channel (control) has no message phase."""
+    def _message_phase(self, t: int, pid: int) -> list[dict]:
+        """Cartel exchange for project index t (0-based) / pid = t + 1 (Task 7).
+
+        Project ids passed to ``Channel`` (``exchange``, ``first_speaker``) are 1-based: pass ``pid``, never ``t``.
+        A closed channel (control) has no message phase."""
         if self.channel.seats is None:
             return []
         raise NotImplementedError("scheme runs: Task 7")
@@ -159,7 +179,7 @@ class _Loop:
         futures = {}
         for seat in range(self.cfg.N):
             ctx = BidContext(run=self.cfg, env=self.env, t=t, seat=seat, cap=caps.copy(),
-                             cost=costs[seat], history=list(window), messages=list(messages),
+                             cost=costs[seat], history=copy.deepcopy(window), messages=copy.deepcopy(messages),
                              memory=[], scratchpad="", role=roles[seat], seats=self.channel.seats,
                              posting=posting)
             futures[seat] = pool.submit(self.bidder.bid, ctx)
@@ -183,7 +203,7 @@ class _Loop:
         costs = [cost_of(env, cfg.cost, i, t, float(caps[i])) for i in range(cfg.N)]
         posting = render_pre_posting(env, t, caps, env.names)
 
-        message_rows = self._message_phase(t)
+        message_rows = self._message_phase(t, pid)
         roles: list[str | None] = [None] * cfg.N
 
         self._touch()
@@ -206,7 +226,7 @@ class _Loop:
             truth_rows.append({"run_id": self.run_id, "project_id": pid, "firm_id": firm, "seat": i,
                                "cost": costs[i], "eps": float(env.eps[i, t]), "nu": float(env.nu[t]),
                                "is_cartel": int(role != "none"), "cartel_role": role,
-                               "scheme": "none" if cfg.condition == "control" else cfg.condition})
+                               "scheme": scheme_of(cfg)})
             call_rows += _call_rows(self.run_id, pid, firm, "bid", results[i].call_records)
 
         self.history.append({

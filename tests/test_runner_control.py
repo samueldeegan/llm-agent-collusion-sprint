@@ -10,7 +10,7 @@ from src.procurement.config import CostParams, RunConfig
 from src.procurement.environment import generate_environment
 from src.procurement.io import (BIDS_COLUMNS, CALLS_COLUMNS, MESSAGES_COLUMNS, TRUTH_COLUMNS,
                                 read_checkpoint, read_run_meta)
-from src.procurement.runner import make_run_meta, run, run_in_memory
+from src.procurement.runner import make_run_meta, resolve_cartel_seats, run, run_in_memory
 from src.procurement.synthetic import SyntheticBidder, simulate_table, synthetic_bidder_factory
 from src.procurement.types import BidResult
 
@@ -286,3 +286,66 @@ def test_scheme_and_resume_not_implemented(tmp_path):
         run_in_memory(RunConfig(condition="markup", seed=1), synthetic_bidder_factory)
     with pytest.raises(NotImplementedError):
         run(CFG, synthetic_bidder_factory, results_root=tmp_path, resume_dir=tmp_path)
+
+
+@pytest.mark.parametrize("cfg, expected", [
+    (RunConfig(condition="cover", seed=1), [0, 3]),
+    (RunConfig(condition="rotation", seed=1), [1, 4]),
+    (RunConfig(condition="markup", seed=1), [2, 5]),
+    (RunConfig(condition="control", seed=1), []),
+    (RunConfig(condition="cover", seed=1, cartel_seats=(0, 1)), [0, 1]),
+])
+def test_run_meta_cartel_seats(cfg, expected):
+    env = generate_environment(cfg.seed, cfg.cost, cfg.T, cfg.N)
+    meta = make_run_meta(cfg, env)
+    assert meta["cartel_seats"] == expected
+    assert all(type(s) is int for s in meta["cartel_seats"])
+    assert meta["scheme"] == ("none" if cfg.condition == "control" else cfg.condition)
+    seats = resolve_cartel_seats(cfg)
+    assert (seats is None) if not expected else (list(seats) == expected)
+
+
+def test_transcript_written_for_raw(tmp_path):
+    class RawBidder:
+        def bid(self, ctx):
+            return BidResult(bid=100.0 + ctx.seat, reason="", parsed=None, raw="x", call_records=[])
+
+        def message(self, ctx):
+            raise AssertionError
+
+    cfg = RunConfig(condition="control", seed=1, T=2)
+    d = run(cfg, lambda c, e: RawBidder(), results_root=tmp_path)
+    env = generate_environment(1, cfg.cost, 2, 6)
+    files = sorted(p.name for p in (d / "transcripts").iterdir())
+    assert files == sorted(f"{n}.md" for n in env.names)
+    text = (d / "transcripts" / f"{env.names[0]}.md").read_text(encoding="utf-8")
+    assert "## Prompt: Project 1 (bid)" in text and "## Response: Project 2 (bid)" in text
+    assert "````\nx\n````" in text
+
+
+def test_history_copied_per_seat(tmp_path):
+    seen = []
+
+    class Mutator:
+        def __init__(self):
+            self.inner = SyntheticBidder(1, COST, 4, 6)
+
+        def bid(self, ctx):
+            seen.append((ctx.t, ctx.seat, json.dumps(ctx.history, sort_keys=True)))
+            for h in ctx.history:  # try to corrupt every view
+                h["winner"] = "corrupted"
+                h["bids"].clear()
+            ctx.history.append({"junk": True})
+            return self.inner.bid(ctx)
+
+        def message(self, ctx):
+            raise AssertionError
+
+    d = run(RunConfig(condition="control", seed=1, T=4), lambda c, e: Mutator(), results_root=tmp_path)
+    assert all("corrupted" not in h and "junk" not in h for _, _, h in seen)
+    by_t = {}
+    for t, _, h in seen:
+        by_t.setdefault(t, set()).add(h)
+    assert all(len(v) == 1 for v in by_t.values())  # every seat saw the same history
+    cp = read_checkpoint(d)
+    assert len(cp["history"]) == 4 and all(h["winner"] != "corrupted" for h in cp["history"])

@@ -1,7 +1,9 @@
 import pytest
 
 from src.procurement.channel import Channel
-from src.procurement.io import MESSAGES_COLUMNS
+import pandas as pd
+
+from src.procurement.io import MESSAGES_COLUMNS, write_csv
 from src.procurement.rules import rotation_roles
 from src.procurement.types import MessageResult
 
@@ -88,7 +90,7 @@ def test_message_format_and_cap():
     assert len(Channel((0, 3), "cover", max_len=40).deliver(_result(text="y" * 100))) == 40
 
 
-def test_message_partial_fields():
+def test_message_partial_fields(tmp_path):
     ch = Channel((0, 3), "cover")
     no_cost = _result(text="hello", my_cost=None, intended=958000)
     text = ch.deliver(no_cost)
@@ -107,3 +109,12 @@ def test_message_partial_fields():
     assert rows[0]["my_cost"] is None
     assert rows[0]["intended_serious_bid"] == 958000
     assert rows[0]["text"] == text
+
+    path = tmp_path / "messages.csv"
+    write_csv(path, [{"run_id": "cover_s1", **r} for r in rows], MESSAGES_COLUMNS)
+    back = pd.read_csv(path, dtype=str, keep_default_na=False)
+    assert list(back.columns) == MESSAGES_COLUMNS
+    assert back.loc[0, "my_cost"] == ""
+    assert back.loc[0, "intended_serious_bid"] == "958000"
+    assert back.loc[0, "text"] == text
+    assert back.loc[1, "my_cost"] != ""
