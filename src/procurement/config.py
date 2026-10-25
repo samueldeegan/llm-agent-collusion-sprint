@@ -159,6 +159,12 @@ def arm_plan(plan_file: dict, arms: list[str], T: int, *, defaults: dict,
     for arm in arms:
         entry = entries[arm]
         fields = {k: v for k, v in entry.items() if k not in ("arm", "R")}
+        for k in fields:
+            if k in ("condition", "seed", "T") or k not in RunConfig.__dataclass_fields__:
+                raise ValueError(f"arm {arm!r}: field {k!r} is not a settable RunConfig field")
+        bad = sorted(set(entry["R"]) - set(CONDITIONS))
+        if bad:
+            raise ValueError(f"arm {arm!r}: unknown condition keys in R: {bad}")
         for cond, n in entry["R"].items():
             for seed in range(1, int(n) + 1):
                 plan.append(run_config_from_defaults(defaults, condition=cond, seed=seed, T=T, cost=cost,

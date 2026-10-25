@@ -1281,3 +1281,38 @@ def test_live_other_arm_does_not_block(tmp_path, capsys):
     args3[-1] = "mem0"
     rc = launcher.main(args3, clock=clock, sleep=clock.sleep, popen=FakePopen(clock))
     assert rc == launcher.EXIT_PREFLIGHT
+
+
+def test_spend_counts_other_launchers_dirs_created_after_start(tmp_path):
+    """The stop is across all launches: run dirs another launcher creates after this Launcher was built
+    count towards the actual spend on every poll."""
+    clock = FakeClock()
+    popen = FakePopen(clock, lambda name, a: {"exit_at": None})
+    lau = _launcher(tmp_path, _plan({"control": 1}, T=10), popen, clock, poll_s=60, stagger_s=0)
+    assert lau.poll_once() is None  # nothing spent yet
+    root = tmp_path / "results" / "runs"
+    for name in ("20261025_120500_control_hidden_s1", "20261025_120600_control_hidden_s2"):
+        d = root / name
+        d.mkdir(parents=True)
+        _write_calls(d, [_call(1, "A", out=120_000_000)])  # $60 each: $120 > the $75 default stop
+    assert lau.poll_once() == launcher.EXIT_SPEND
+    assert lau.actual > 100
+
+
+def test_missing_spend_stop_usd_is_preflight(tmp_path, monkeypatch, capsys):
+    from src.procurement import config
+    d = {k: v for k, v in config.load_defaults().items() if k != "spend_stop_usd"}
+    monkeypatch.setattr(config, "load_defaults", lambda *a, **k: d)
+    assert launcher.main(_arm_args(tmp_path, "mem0"), clock=FakeClock(), popen=_no_popen) == launcher.EXIT_PREFLIGHT
+    assert "spend_stop_usd" in capsys.readouterr().err
+    assert not (tmp_path / "results" / "launches").exists()
+
+
+def test_arms_bad_entry_refused_in_launcher(tmp_path, capsys):
+    plan = tmp_path / "bad_plan.json"
+    plan.write_text(json.dumps({"R": FULL_R, "T": 110, "deadline_utc": "2026-10-27T11:59:00Z",
+                                "arms": [{"arm": "x", "R": {"control": 1}, "bogus_field": 1}]}), encoding="utf-8")
+    rc = launcher.main(_arm_args(tmp_path, "x", plan=plan), clock=FakeClock(), popen=_no_popen)
+    assert rc == launcher.EXIT_PREFLIGHT
+    assert "bogus_field" in capsys.readouterr().err
+    assert not (tmp_path / "results" / "launches").exists()

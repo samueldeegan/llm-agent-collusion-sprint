@@ -300,15 +300,19 @@ def existing_run_dirs(results_root) -> list[Path]:
 
 
 def spend_guard(run_dirs, pricing: Pricing, planned_calls: int, stop_usd: float = 75.0,
-                baseline: tuple[float, int] = (0.0, 0), warn: Callable[[str], None] | None = None
-                ) -> tuple[float, float, bool]:
+                baseline: tuple[float, int] = (0.0, 0), warn: Callable[[str], None] | None = None,
+                own_dirs=None) -> tuple[float, float, bool]:
     """(actual, projected, stop?) over total spend: ``baseline`` (USD, calls) already spent before this
     launch plus every ``calls.csv`` in ``run_dirs``. projected = actual x (baseline calls + planned) /
     completed calls; stop when actual > ``stop_usd``, or when projected > ``stop_usd`` once at least 200
     calls are in (spec A50)."""
     usd, calls = spend_totals(run_dirs, pricing, warn)
     actual, calls = baseline[0] + usd, baseline[1] + calls
-    projected = actual * (baseline[1] + planned_calls) / max(calls, 1)
+    if own_dirs is None:
+        projected = actual * (baseline[1] + planned_calls) / max(calls, 1)
+    else:  # run_dirs = every launch's dirs; only this launch's remaining calls are projected
+        remaining = max(planned_calls - spend_totals(own_dirs, pricing, warn)[1], 0)
+        projected = actual * (calls + remaining) / max(calls, 1)
     stop = actual > stop_usd or (calls >= SPEND_FLOOR_CALLS and projected > stop_usd)
     return actual, projected, bool(stop)
 
@@ -675,8 +679,18 @@ class Launcher:
         return [d for r in self.runs for d in r.run_dirs]
 
     def _spend(self) -> bool:
-        self.actual, self.projected, stop = spend_guard(self._all_dirs(), self.pricing, self.planned_calls,
-                                                        self.stop_usd, self.baseline, self.log)
+        # actual spend over every run dir under the results root and calibration_runs, re-listed each poll
+        # (other launches' dirs included: the stop is across all launches); resumed dirs are not double
+        # counted. Projected adds only this launcher's own remaining planned calls.
+        own = self._all_dirs()
+        seen, dirs = set(), []
+        for d in [*existing_run_dirs(self.results_root), *own]:
+            key = Path(d).resolve()
+            if key not in seen:
+                seen.add(key)
+                dirs.append(d)
+        self.actual, self.projected, stop = spend_guard(dirs, self.pricing, self.planned_calls, self.stop_usd,
+                                                        (0.0, 0), self.log, own_dirs=own)
         return stop
 
     def _stop(self, reason: str, code: int | None) -> int | None:
@@ -977,6 +991,9 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     plan_file = json.loads(_repo_path(args.plan).read_text(encoding="utf-8"))
     frozen_path, decisions = _repo_path(args.frozen), _repo_path(args.decisions)
     stall_s = float(defaults.get("stall_s", 600))
+    if "spend_stop_usd" not in defaults:
+        print("launcher: refusing to start: config/defaults.json has no spend_stop_usd", file=sys.stderr)
+        return EXIT_PREFLIGHT
     arms = [a.strip() for a in args.arms.split(",") if a.strip()] if args.arms is not None else None
     if arms is not None:  # an empty or unknown arm is refused before any file is written
         known = [e.get("arm") for e in plan_file.get("arms", [])]
@@ -1048,6 +1065,13 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
                                    bidder=args.bidder, results_root=str(results_root))
         return config.run_plan(p["R"], p["include_rotation"], p["T"], defaults=defaults, cost=cost,
                                bidder=args.bidder, results_root=str(results_root))
+
+    if arms is not None:  # a bad arms entry is refused before any file is written
+        try:
+            configs(plan)
+        except ValueError as exc:
+            print(f"launcher: refusing to start: {exc}", file=sys.stderr)
+            return EXIT_PREFLIGHT
 
     # T of the runs already made for this plan: never changed mid-experiment (C5)
     existing_T, existing_names = existing_experiment_T(results_root, configs(plan))

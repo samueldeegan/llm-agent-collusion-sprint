@@ -110,3 +110,18 @@ def test_new_flags_roundtrip_and_defaults():
     d = config.load_defaults()
     assert d["scratchpad_enabled"] is True and d["spend_stop_usd"] == 150
     assert "scratchpad_enabled" in config.DEFAULTS_RUN_FIELDS
+
+
+def test_arm_plan_rejects_bad_entries():
+    from src.procurement.config import arm_plan
+    d = load_defaults()
+    ok = {"arm": "a", "R": {"control": 2}, "memory_window": 0}
+    assert [(c.arm, c.seed, c.memory_window) for c in arm_plan({"arms": [ok]}, ["a"], 110, defaults=d)] == [
+        ("a", 1, 0), ("a", 2, 0)]
+    for bad, needle in (({**ok, "bogus": 1}, "bogus"), ({**ok, "T": 5}, "'T'"), ({**ok, "seed": 3}, "'seed'"),
+                        ({**ok, "R": {"nonsense": 1}}, "nonsense")):
+        with pytest.raises(ValueError, match="arm 'a'") as e:
+            arm_plan({"arms": [bad]}, ["a"], 110, defaults=d)
+        assert needle in str(e.value)
+    with pytest.raises(ValueError, match="unknown arm"):
+        arm_plan({"arms": [ok]}, ["zzz"], 110, defaults=d)
