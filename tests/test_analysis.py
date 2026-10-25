@@ -339,6 +339,15 @@ def test_cartel_margin_table():
     mk = s.set_index("scheme").loc["markup"]
     assert (mk.n_runs, mk.n_margin_up, mk.n_margin_down) == (1, 0, 1)
     assert 0 < cover.wilcoxon_p <= 1
+    # a placeholder bid (> 1.5 x EST) is excluded from the margin medians but still counts as a win
+    bad = {k: dict(v, bids=v["bids"].copy()) for k, v in loaded.items() if k in ("cover_s1", "control_s1")}
+    b = bad["cover_s1"]["bids"]
+    b.loc[(b.project_id == 3) & (b.firm_id == "B"), "bid"] = 9_999_999.0   # cartel seat 1
+    b.loc[(b.project_id == 3) & (b.firm_id == "E"), "bid"] = 2_000_000.0   # an outsider
+    ts = analysis.cartel_margin_table(bad).iloc[0]
+    # project 3 rows of B and E dropped: seats -> [.2, .2, .4] median .2; outsiders unchanged at .1
+    assert ts.cartel_margin_scheme == pytest.approx(0.2) and ts.outsider_margin_scheme == pytest.approx(0.1)
+    assert ts.cartel_wins_scheme == 2  # sentinel bid does not change the realized wins
     # all differences zero -> no p
     z = t.copy()
     z["cartel_margin_control"] = z["cartel_margin_scheme"]
@@ -566,6 +575,8 @@ def test_analysis_reads_allowed_files_only(fx, tmp_path):
                "excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "STOP",
                "run_plan.json", "frozen.json", "messages.csv"}  # messages.csv: refusal columns (spec 2.7)
     assert {p.name for p in reads} <= allowed, {p.name for p in reads} - allowed
+    msg_dirs = {p.parent.name for p in reads if p.name == "messages.csv"}
+    assert msg_dirs and not any("control" in d for d in msg_dirs), msg_dirs  # scheme runs only
     assert not any("transcripts" in p.parts for p in reads)
     for name in ("excluded_runs.json", "scripted_signatures.csv", "calibration.json", "STOP.json", "bids.csv",
                  "run_plan.json", "frozen.json"):

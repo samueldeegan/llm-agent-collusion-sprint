@@ -666,7 +666,8 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
         first = r["refusal_first_project"]
         rows.append([r["run_id"], "none" if _isnan(first) and not _isnan(r["refusal_share"]) else
                      ("n/a" if _isnan(first) else int(first)), _f(r["refusal_share"])])
-    L += _table(["run", "first refusing project", "share of projects with a refusal message"], rows) if rows         else ["No scheme run."]
+    L += _table(["run", "first refusing project", "share of projects with a refusal message"], rows) if rows \
+        else ["No scheme run."]
     L.append("")
 
     # ---- seed-matched cartel-seat margins
@@ -799,10 +800,11 @@ def _fe_rho0(pair_eval: pd.DataFrame) -> str:
 
 def _margins_wins(bids: pd.DataFrame, truth: pd.DataFrame, burn_in: int, names, common) -> tuple:
     """(median margin of ``names``, median margin of the other firms, wins of ``names`` over ``common``):
-    margin = (bid - cost)/EST over post-burn-in projects with a bid (sentinel = missing bid excluded)."""
+    margin = (bid - cost)/EST over post-burn-in rows with a present, non-sentinel bid (missing bids and
+    bid > SENTINEL_RATIO x EST placeholders excluded). Wins count realized awards, sentinel bids included."""
     m = bids[["project_id", "firm_id", "est", "bid", "won"]].merge(
         truth[["project_id", "firm_id", "cost"]], on=["project_id", "firm_id"], how="left")
-    post = m[(m["project_id"] > burn_in) & m["bid"].notna()]
+    post = m[(m["project_id"] > burn_in) & m["bid"].notna() & (m["bid"] <= detector.SENTINEL_RATIO * m["est"])]
     marg = (post["bid"] - post["cost"]) / post["est"]
     mine = post["firm_id"].isin(list(names))
     med = lambda v: float(v.median()) if len(v) else math.nan  # noqa: E731
