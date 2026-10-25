@@ -201,6 +201,34 @@ def test_arm_smoke_reports_prompt_violation_and_exits_1(tmp_path, key, monkeypat
     assert "PROMPT CHECK FAILED" in capsys.readouterr().out
 
 
+def _transcript_text(d) -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for p in sorted(Path(d).rglob("*.md")))
+
+
+@pytest.mark.parametrize("arm", ["hidden", "stateless_hidden"])
+def test_arm_smoke_hidden_checks(tmp_path, key, arm):
+    mod = load_script("arm_smoke")
+    assert mod.main(["--arm", arm, "--results-dir", str(tmp_path)],
+                    bidder_factory=stub_factory(StubClient())) == 0
+    (d,) = _run_dirs(tmp_path)
+    assert io.read_run_meta(d)["bidder_info"] == "hidden"
+    assert _cal(tmp_path)["round2_smokes"][arm]["prompt_checks"] == []
+    text = _transcript_text(d)
+    assert "Your firm rate: " in text and "How costs work" in text
+    assert "built the same way" not in text and "Firm rate" not in text
+
+
+def test_arm_smoke_detects_violation(tmp_path, key, monkeypatch):
+    from src.procurement import render
+    monkeypatch.setattr(render, "HIDDEN_COST_SECTION",
+                        render.HIDDEN_COST_SECTION + " Every firm's cost is built the same way.")
+    mod = load_script("arm_smoke")
+    assert mod.main(["--arm", "hidden", "--results-dir", str(tmp_path)],
+                    bidder_factory=stub_factory(StubClient())) == 1
+    checks = _cal(tmp_path)["round2_smokes"]["hidden"]["prompt_checks"]
+    assert any("built the same way" in c for c in checks)
+
+
 def test_arm_smoke_corrupt_calibration_fails_before_run(tmp_path, key):
     (tmp_path / "calibration.json").write_text("{not json", encoding="utf-8")
     mod = load_script("arm_smoke")

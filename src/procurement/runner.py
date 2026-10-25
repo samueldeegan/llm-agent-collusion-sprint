@@ -384,7 +384,7 @@ class _Loop:
         pid, est = t + 1, float(env.est[t])
         caps = self.ledger.caps().copy()  # CAP before this project's award
         costs = [cost_of(env, cfg.cost, i, t, float(caps[i])) for i in range(cfg.N)]
-        posting = render_pre_posting(env, t, caps, env.names)
+        posting = render_pre_posting(env, t, caps, env.names, show_rates=(cfg.bidder_info == "shown"))
 
         self._touch()
         done: list = []

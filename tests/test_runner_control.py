@@ -429,3 +429,17 @@ def test_arm_defaults_to_base_when_absent(tmp_path):
                                             encoding="utf-8")
     old = io.read_truth_file(tmp_path / "old_truth.csv")
     assert set(old["arm"]) == {"base"}
+
+
+def test_hidden_bids_csv_unchanged(tmp_path):
+    from src.procurement import io
+    cols = {}
+    for info in ("shown", "hidden"):
+        cfg = RunConfig(condition="control", seed=4, T=12, burn_in=10, bidder="synthetic",
+                        bidder_info=info, arm="x_" + info)
+        with api_guard():
+            d = run(cfg, synthetic_bidder_factory, results_root=tmp_path)
+        cols[info] = io.read_bids(d)
+    assert list(cols["shown"].columns) == list(cols["hidden"].columns)
+    pd.testing.assert_series_equal(cols["shown"]["firm_rate"], cols["hidden"]["firm_rate"])
+    pd.testing.assert_series_equal(cols["shown"]["bid"], cols["hidden"]["bid"])

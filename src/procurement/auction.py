@@ -44,8 +44,10 @@ def rival_covariates(dist_t: np.ndarray, caps_t: np.ndarray) -> tuple[np.ndarray
     return mdist, maxp
 
 
-def render_pre_posting(env: Environment, t: int, caps: np.ndarray, names: list[str]) -> str:
-    """Public notice shown to every firm before bidding. t is the 0-based project index."""
+def render_pre_posting(env: Environment, t: int, caps: np.ndarray, names: list[str],
+                       show_rates: bool = True) -> str:
+    """Public notice shown to every firm before bidding. t is the 0-based project index.
+    ``show_rates=False`` drops the firm-rate column (bidder_info="hidden")."""
     lines = [
         f"Project {t + 1}",
         f"EST: ${env.est[t]:,.0f}",
@@ -54,10 +56,11 @@ def render_pre_posting(env: Environment, t: int, caps: np.ndarray, names: list[s
         f"K: ${env.K:,.0f}",
         "CAP is the EST dollars a firm has won so far divided by K.",
         "",
-        f"{'Firm':<28}{'DIST (mi)':>10}{'CAP':>8}{'Firm rate':>11}",
+        f"{'Firm':<28}{'DIST (mi)':>10}{'CAP':>8}" + (f"{'Firm rate':>11}" if show_rates else ""),
     ]
     for i, name in enumerate(names):
-        lines.append(f"{name:<28}{env.dist[i, t]:>10.1f}{caps[i]:>8.3f}{env.eta[i]:>+11.4f}")
+        row = f"{name:<28}{env.dist[i, t]:>10.1f}{caps[i]:>8.3f}"
+        lines.append(row + (f"{env.eta[i]:>+11.4f}" if show_rates else ""))
     return "\n".join(lines)
 
 
