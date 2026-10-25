@@ -9,7 +9,6 @@ Outsider text never mentions the cartel: no "partner", "cartel" or "collud", no 
 from __future__ import annotations
 
 import dataclasses
-import re
 from pathlib import Path
 
 import numpy as np
@@ -98,13 +97,15 @@ def _cartel_block(cfg: RunConfig, env: Environment, seat: int, scheme: str, part
         raise ValueError(f"unknown scheme {scheme!r}")
     if partner_name is None:
         raise ValueError("a cartel member's prompt needs the partner's name")
+    if partner_name not in env.names:
+        raise ValueError(f"unknown partner {partner_name!r}")
+    a, b = _resolve_pair(cfg, seat, env.names.index(partner_name), seats)  # partner must match the pair
     parts = [texts.COMMON.format(partner=partner_name)]
     if scheme == "cover":
         parts.append(texts.COVER)
     elif scheme == "markup":
         parts.append(texts.MARKUP)
     else:
-        a, b = _resolve_pair(cfg, seat, env.names.index(partner_name), seats)
         parts.append(texts.ROTATION.format(A=env.names[a], B=env.names[b]))
     return "# Private agreement\n" + "\n\n".join(parts)
 
@@ -156,14 +157,16 @@ def _variables(ctx: BidContext, posting_pre: str) -> dict:
     memory = ctx.memory[-cfg.memory_window:] if cfg.memory_window > 0 else []
     member = _is_member(ctx)
     role_line = None
-    if member and cfg.condition == "rotation" and ctx.role in ("serious", "cover"):
+    if member and cfg.condition == "rotation":
+        if ctx.role not in ("serious", "cover"):
+            raise ValueError(f"a rotation cartel member needs ctx.role 'serious' or 'cover', got {ctx.role!r}")
         role_line = texts.ROTATION_ROLE_LINE.format(
             t=ctx.t + 1, role="serious bidder" if ctx.role == "serious" else "cover bidder")
     partner = None
     if member:
         partner = env.names[ctx.seats[1] if ctx.seat == ctx.seats[0] else ctx.seats[0]]
     return {
-        "memory": memory,
+        "memory": [_bullet(m) for m in memory],
         "project_id": ctx.t + 1,
         "T": cfg.T,
         "posting": posting_pre,
@@ -172,22 +175,23 @@ def _variables(ctx: BidContext, posting_pre: str) -> dict:
         "history_window": cfg.history_window,
         "history": [{"project_id": h["project_id"], "est_str": f"${h['est']:,.0f}", "tag": h["tag"],
                      "post_posting": h["post_posting"]} for h in window],
-        "scratchpad": (ctx.scratchpad or "").strip(),
-        "messages": ([{"sender": env.names[m["sender"]], "text": m["text"]} for m in ctx.messages]
+        "scratchpad": ctx.scratchpad if (ctx.scratchpad or "").strip() else "",
+        "messages": ([{"sender": env.names[m["sender"]], "text": _bullet(m["text"])} for m in ctx.messages]
                      if member else None),
         "role_line": role_line,
         "partner": partner,
     }
 
 
-def _tidy(text: str) -> str:
-    return re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
+def _bullet(text: str) -> str:
+    """Indent continuation lines so multi-line agent text stays inside its bullet; otherwise intact."""
+    return str(text).replace("\n", "\n  ")
 
 
 def build_bid_user_message(ctx: BidContext, posting_pre: str) -> str:
     vars_ = _variables(ctx, posting_pre)
     vars_["schema"] = BID_SCHEMA
-    return _tidy(render_prompt(PROMPT_DIR, "bid.jinja2", **vars_))
+    return render_prompt(PROMPT_DIR, "bid.jinja2", **vars_)
 
 
 def build_message_user_message(ctx: BidContext, posting_pre: str) -> str:
@@ -195,7 +199,7 @@ def build_message_user_message(ctx: BidContext, posting_pre: str) -> str:
         raise ValueError("only cartel members write messages")
     vars_ = _variables(ctx, posting_pre)
     vars_["schema"] = message_schema(ctx.run)
-    return _tidy(render_prompt(PROMPT_DIR, "message.jinja2", **vars_))
+    return render_prompt(PROMPT_DIR, "message.jinja2", **vars_)
 
 
 # ------------------------------------------------------------------ test helper

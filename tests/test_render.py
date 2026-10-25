@@ -305,3 +305,56 @@ def test_scheme_requires_partner(env):
         build_system_prefix(_cfg("cover", SEATS), env, 0, "cover", None)
     with pytest.raises(ValueError):
         build_system_prefix(_cfg("cover", SEATS), env, 0, "bogus", env.names[1])
+
+
+# ------------------------------------------------------------------ review fixes
+
+@pytest.mark.parametrize("role", [None, "member", "bogus"])
+def test_rotation_member_requires_role(env, role):
+    cfg = _cfg("rotation", SEATS)
+    ctx = _ctx(env, cfg, 6, 0, seats=SEATS, role=role)
+    with pytest.raises(ValueError, match="role"):
+        build_bid_user_message(ctx, ctx.posting)
+    with pytest.raises(ValueError, match="role"):
+        build_message_user_message(ctx, ctx.posting)
+    # outsiders in a rotation run, and cover/markup members, need no role
+    out = _ctx(env, cfg, 6, 4, seats=None, role=None)
+    assert "# Your role this project" not in build_bid_user_message(out, out.posting)
+    for cond in ("cover", "markup"):
+        c = _cfg(cond, SEATS)
+        ctx = _ctx(env, c, 6, 0, seats=SEATS, role=None)
+        build_bid_user_message(ctx, ctx.posting)
+        build_message_user_message(ctx, ctx.posting)
+
+
+@pytest.mark.parametrize("scheme", ["cover", "markup", "rotation"])
+def test_partner_must_match_the_pair(env, scheme):
+    cfg = _cfg(scheme, SEATS)
+    build_system_prefix(cfg, env, 0, scheme, env.names[1])
+    build_message_system_prefix(cfg, env, 0, scheme, env.names[1])
+    for bad in (env.names[3], env.names[0], "Nobody Inc"):  # outsider, self, unknown firm
+        with pytest.raises(ValueError):
+            build_system_prefix(cfg, env, 0, scheme, bad)
+        with pytest.raises(ValueError):
+            build_message_system_prefix(cfg, env, 0, scheme, bad)
+
+
+def test_multiline_agent_text_keeps_bullets(env):
+    cfg = _cfg("cover", SEATS)
+    msgs = [_msg(1, 0, "Line one.\nLine two.")]
+    ctx = _ctx(env, cfg, 6, 0, seats=SEATS, messages=msgs, memory=["first\nsecond", "third"])
+    for user in (build_bid_user_message(ctx, ctx.posting), build_message_user_message(ctx, ctx.posting)):
+        assert f"- From {env.names[1]}: Line one.\n  Line two.\n" in user
+        assert "- first\n  second\n- third\n" in user
+
+
+def test_scratchpad_and_agent_text_survive_intact(env):
+    cfg = _cfg("cover", SEATS)
+    pad = "plan A\n\n\nplan B\n\n\n\nend"
+    ctx = _ctx(env, cfg, 6, 0, seats=SEATS, scratchpad=pad)
+    user = build_bid_user_message(ctx, ctx.posting)
+    assert f"# Strategy scratchpad\n{pad}" in user
+    # the template itself adds no runs of 3+ newlines outside the scratchpad
+    assert "\n\n\n" not in user.replace(pad, "PAD")
+    ctx = _ctx(env, _cfg(), 6, 3, scratchpad="  \n ")
+    assert "# Strategy scratchpad\n(empty)\n" in build_bid_user_message(ctx, ctx.posting)
