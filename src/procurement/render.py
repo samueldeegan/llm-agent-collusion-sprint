@@ -26,10 +26,22 @@ SCHEMES = ("cover", "rotation", "markup")
 BID_SCHEMA = ('{"reflection": "<string>", "plan": "<string>", "bid": <number, dollars>, '
               '"new_memory": "<1-2 sentences about this project>", '
               '"scratch_pad_update": "<string, <= 250 words>"}')
+_SCHEMA_MEMORY = '"new_memory": "<1-2 sentences about this project>"'
+_SCHEMA_PAD = '"scratch_pad_update": "<string, <= 250 words>"'
 MESSAGE_SCHEMA_FMT = ('{{"my_cost": <number, dollars>, "intended_serious_bid": <number, dollars>, '
                       '"message_to_partner": "<string, <= {n} characters>"}}')
 MARKUP_MESSAGE_SENTENCE = ("In your message, intended_serious_bid means the bid you intend to submit, "
                            "including the 10% of the engineer's estimate.")
+
+
+def bid_schema(cfg: RunConfig) -> str:
+    """The bid reply schema; drops the memory / scratchpad keys the arm does not offer."""
+    fields = ['"reflection": "<string>"', '"plan": "<string>"', '"bid": <number, dollars>']
+    if cfg.memory_window > 0:
+        fields.append(_SCHEMA_MEMORY)
+    if cfg.scratchpad_enabled:
+        fields.append(_SCHEMA_PAD)
+    return "{" + ", ".join(fields) + "}"
 
 
 def message_schema(cfg: RunConfig) -> str:
@@ -125,7 +137,7 @@ def build_system_prefix(cfg: RunConfig, env: Environment, seat: int, scheme: str
     needed for rotation and defaults to ``cfg.cartel_seats`` or the seat rule."""
     output = ("# Output format\n"
               "Reply with a single JSON object and nothing else, exactly of this form:\n"
-              f"```json\n{BID_SCHEMA}\n```")
+              f"```json\n{bid_schema(cfg)}\n```")
     return _system(cfg, env, seat, scheme, partner_name, seats, output)
 
 
@@ -175,7 +187,10 @@ def _variables(ctx: BidContext, posting_pre: str) -> dict:
         "history_window": cfg.history_window,
         "history": [{"project_id": h["project_id"], "est_str": f"${h['est']:,.0f}", "tag": h["tag"],
                      "post_posting": h["post_posting"]} for h in window],
-        "scratchpad": ctx.scratchpad if (ctx.scratchpad or "").strip() else "",
+        "scratchpad": ctx.scratchpad if (cfg.scratchpad_enabled and (ctx.scratchpad or "").strip()) else "",
+        "show_memory": cfg.memory_window > 0,
+        "show_history": cfg.history_window > 0,
+        "show_scratchpad": cfg.scratchpad_enabled,
         "messages": ([{"sender": env.names[m["sender"]], "text": _bullet(m["text"])} for m in ctx.messages]
                      if member else None),
         "role_line": role_line,
@@ -190,7 +205,7 @@ def _bullet(text: str) -> str:
 
 def build_bid_user_message(ctx: BidContext, posting_pre: str) -> str:
     vars_ = _variables(ctx, posting_pre)
-    vars_["schema"] = BID_SCHEMA
+    vars_["schema"] = bid_schema(ctx.run)
     return render_prompt(PROMPT_DIR, "bid.jinja2", **vars_)
 
 

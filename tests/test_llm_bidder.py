@@ -472,3 +472,15 @@ def test_resume_keeps_llm_memory(tmp_path):
             [f"- Project {p}: m{p}" for p in range(1, 7)]
     assert (new / "bids.csv").read_bytes() == (ref / "bids.csv").read_bytes()
     assert read_checkpoint(new)["bidder_state"] == read_checkpoint(ref)["bidder_state"]
+
+
+def test_scratchpad_disabled_never_updates():
+    cfg = dataclasses_replace(CONTROL, memory_window=0, scratchpad_enabled=False)
+    reply = '{"reflection":"r","plan":"p","bid":650000,"new_memory":"REMEMBER","scratch_pad_update":"PAD"}'
+    stub = StubClient(NAMES, replies={(0, "bid", 1): reply, (0, "bid", 2): reply})
+    bidder = LLMBidder(cfg, ENV, 0, stub)
+    first = bidder.bid(_ctx(cfg, 0, 0))
+    second = bidder.bid(_ctx(cfg, 0, 1))
+    assert first.bid == 650000.0 and bidder.memories == {} and bidder.scratchpad == ""
+    assert bidder.get_state() == {"memories": {}, "scratchpad": ""}
+    assert "REMEMBER" not in second.prompt and "PAD" not in second.prompt

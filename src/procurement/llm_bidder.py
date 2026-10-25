@@ -106,7 +106,8 @@ class LLMBidder:
     def _with_memory(self, ctx: BidContext) -> BidContext:
         if ctx.seat != self.seat:
             raise ValueError(f"LLMBidder for seat {self.seat} got a context for seat {ctx.seat}")
-        return dataclasses.replace(ctx, memory=self.memory_lines(), scratchpad=self.scratchpad)
+        pad = self.scratchpad if self.cfg.scratchpad_enabled else ""
+        return dataclasses.replace(ctx, memory=self.memory_lines(), scratchpad=pad)
 
     # -------------------------------------------------------------- calls
 
@@ -118,10 +119,10 @@ class LLMBidder:
         reason, records = _settle(resp, records, parse_reason)
         if parsed is not None:  # the reply parsed as JSON, even if the bid was bad
             memory = parsed.get("new_memory")
-            if isinstance(memory, str) and memory.strip():
+            if self.cfg.memory_window > 0 and isinstance(memory, str) and memory.strip():
                 self.memories[ctx.t + 1] = memory
             pad = parsed.get("scratch_pad_update")
-            if isinstance(pad, str) and pad.strip():
+            if self.cfg.scratchpad_enabled and isinstance(pad, str) and pad.strip():
                 self.scratchpad = pad
         return BidResult(bid=bid, reason=reason, parsed=copy.deepcopy(parsed), raw=_raw_text(resp),
                          call_records=records, prompt=_prompt(system, user))

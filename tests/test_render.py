@@ -1,4 +1,5 @@
 """Prompts and verbatim cartel texts (spec 4c, 4d, 4e; test plan 6.8 prompt rows)."""
+import dataclasses
 import re
 from pathlib import Path
 
@@ -13,7 +14,9 @@ from src.procurement.environment import cost_of, generate_environment
 from src.procurement.render import (build_bid_user_message, build_message_system_prefix,
                                     build_message_user_message, build_system_prefix,
                                     render_outsider_prompt_for_test)
+from src.procurement.prompt_sections import expected_sections, sections_of
 from src.procurement.types import BidContext, MessageResult
+from tests.fixtures.prompt_fixture import fixture_cfg, fixture_inputs
 
 SPEC = Path(__file__).resolve().parents[1] / "docs/superpowers/specs/2026-10-25-bajari-ye-procurement-design.md"
 COST = CostParams(0.90, 0.08, 0.17, 0.05)
@@ -358,3 +361,55 @@ def test_scratchpad_and_agent_text_survive_intact(env):
     assert "\n\n\n" not in user.replace(pad, "PAD")
     ctx = _ctx(env, _cfg(), 6, 3, scratchpad="  \n ")
     assert "# Strategy scratchpad\n(empty)\n" in build_bid_user_message(ctx, ctx.posting)
+
+
+# ------------------------------------------------------------------ round-2 state flags
+
+ARMS = {"base": dict(memory_window=10, scratchpad_enabled=True, history_window=20),
+        "mem0": dict(memory_window=0, scratchpad_enabled=False, history_window=20),
+        "stateless": dict(memory_window=0, scratchpad_enabled=False, history_window=0)}
+
+
+@pytest.mark.parametrize("arm", list(ARMS))
+def test_state_flags_prompt_sections(env, arm):
+    cfg = dataclasses.replace(fixture_cfg(), arm=arm, **ARMS[arm])
+    fx = fixture_inputs(env)
+    system, user = render_outsider_prompt_for_test(cfg, env, fx["seat"], fx["t"], fx["history"], "control",
+                                                   memory=fx["memory"], scratchpad=fx["scratchpad"])
+    exp_sys, exp_user = expected_sections(cfg, "bid", t=fx["t"])
+    assert sections_of(system) == exp_sys and sections_of(user) == exp_user
+    if arm != "base":
+        assert "No memories yet." not in user and "No projects have been completed yet." not in user
+        assert "scratch_pad_update" not in system and "new_memory" not in system
+    if arm == "stateless":
+        assert "# Last" not in user
+        assert '{"reflection": "<string>", "plan": "<string>", "bid": <number, dollars>}' in system
+
+
+def test_base_prompt_unchanged(env):
+    cfg, fx = fixture_cfg(), fixture_inputs(env)
+    system, user = render_outsider_prompt_for_test(cfg, env, fx["seat"], fx["t"], fx["history"], "control",
+                                                   memory=fx["memory"], scratchpad=fx["scratchpad"])
+    d = Path(__file__).parent / "fixtures"
+    for name, got in (("system", system), ("user", user)):
+        with open(d / f"base_prompt_seat2_p15.{name}.txt", encoding="utf-8", newline="") as f:
+            assert got == f.read()
+
+
+def test_history_window_zero_omits_section(env):
+    cfg = dataclasses.replace(fixture_cfg(), history_window=0)
+    fx = fixture_inputs(env)
+    _, user = render_outsider_prompt_for_test(cfg, env, 2, 14, fx["history"], "control")
+    assert "# Last" not in user and "### Project" not in user
+
+
+def test_bid_schema_variants():
+    from src.procurement.render import BID_SCHEMA, bid_schema
+    base = fixture_cfg()
+    assert bid_schema(base) == BID_SCHEMA
+    no_mem = dataclasses.replace(base, memory_window=0)
+    assert '"new_memory"' not in bid_schema(no_mem) and '"scratch_pad_update"' in bid_schema(no_mem)
+    no_pad = dataclasses.replace(base, scratchpad_enabled=False)
+    assert '"scratch_pad_update"' not in bid_schema(no_pad) and '"new_memory"' in bid_schema(no_pad)
+    both = dataclasses.replace(base, memory_window=0, scratchpad_enabled=False)
+    assert bid_schema(both) == '{"reflection": "<string>", "plan": "<string>", "bid": <number, dollars>}'
