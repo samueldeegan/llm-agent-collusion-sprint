@@ -33,12 +33,14 @@ def _merged(bids: pd.DataFrame, truth: pd.DataFrame) -> pd.DataFrame:
     keys = ["run_id", "project_id", "firm_id"]
     tcols = keys + [c for c in ("seat", "cost") if c in truth.columns]
     df = bids.merge(truth[tcols], on=keys, how="left")
-    grp = df.groupby(["run_id", "project_id"])["cost"]
-    df["min_cost"] = grp.transform("min")
-    second = grp.transform(lambda s: np.sort(s.to_numpy())[1] if len(s) > 1 else np.nan)
+    # leading / min rival cost come from all firms' TRUTH costs per project, not from the bid rows present
+    srt = truth.groupby(["run_id", "project_id"])["cost"].apply(lambda c: np.sort(c.to_numpy()))
+    lo = srt.map(lambda a: a[0]).rename("min_cost")
+    second = srt.map(lambda a: a[1] if len(a) > 1 else np.nan).rename("second_cost")
+    df = df.merge(pd.concat([lo, second], axis=1).reset_index(), on=["run_id", "project_id"], how="left")
     df["leading"] = df["cost"] <= df["min_cost"]
     # min rival cost: second-lowest cost when own cost is the minimum, else the overall minimum
-    df["rival_min"] = np.where(df["leading"], second, df["min_cost"])
+    df["rival_min"] = np.where(df["leading"], df["second_cost"], df["min_cost"])
     df["margin"] = (df["bid"] - df["cost"]) / df["est"]
     df["gap"] = (df["rival_min"] - df["cost"]) / df["est"]
     df["sentinel"] = df["bid"].isna() | (df["bid"] > SENTINEL_RATIO * df["est"])
@@ -110,8 +112,9 @@ def a3_by_pair_type(pair_eval: pd.DataFrame, table: pd.DataFrame, spec: str = "t
         if ri is None or rj is None:
             continue
         a, b = sorted((ri, rj))
-        out.append(dict(arm=r.arm, regime_i=a, regime_j=b,
-                        flag=int(pd.notna(r.a3_flag) and r.a3_flag == 1)))
+        if pd.isna(r.a3_flag):
+            continue
+        out.append(dict(arm=r.arm, regime_i=a, regime_j=b, flag=int(r.a3_flag == 1)))
     if not out:
         return pd.DataFrame(columns=cols)
     d = pd.DataFrame(out).groupby(["arm", "regime_i", "regime_j"], as_index=False).agg(

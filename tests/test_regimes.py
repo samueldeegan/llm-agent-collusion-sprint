@@ -8,11 +8,12 @@ RID = "x_control_base_s3"
 EST = 1000.0
 
 
-def build(bid_fn, n=30, seed=0):
+def build(bid_fn, n=30, seed=0, offsets=None):
     rng = np.random.default_rng(seed)
     brow, trow = [], []
     for p in range(1, n + 1):
-        cost = {f: EST * rng.uniform(0.6, 0.7) - (0.03 * EST if f == "C" else 0) for f in FIRMS}  # small gaps; C often leads
+        # narrow cost range keeps gaps small: wide gaps push C margin_med >= 0.05 so it would classify as fat, not shade
+        cost = {f: EST * rng.uniform(0.6, 0.7) - (0.03 * EST if f == "C" else 0) + (offsets or {}).get(f, 0) * EST for f in FIRMS}
         for i, f in enumerate(FIRMS):
             dist, cap = rng.uniform(0, 5), rng.uniform(0, 1)
             own = cost[f]
@@ -58,6 +59,9 @@ def test_firm_season_table():
     assert abs(tab.loc["E", "margin_when_trailing"] - 0.03) < 1e-9
     counts = rg.regime_counts(full)
     assert counts["n_firm_seasons"].sum() == 6 and len(counts) == 5
+    assert dict(zip(counts["regime"], counts["n_firm_seasons"])) == {
+        "passer": 1, "fat": 1, "shade": 1, "razor": 1, "moderate": 2}
+    assert list(counts["regime"]) == list(rg.REGIME_ORDER)
 
 
 def test_a3_by_pair_type():
@@ -82,3 +86,82 @@ def test_slope_dispersion():
     assert all(r["sd_cap_slope"] > 0.1 for r in rows)
     agg = rg.slope_dispersion_by_arm(rows)
     assert list(agg.columns) == rg.DISPERSION_COLUMNS and (agg["n_runs"] == 1).all()
+
+
+def test_leading_trailing_margins_differ():
+    b, t = build(mixed)
+    tab = rg.firm_season_table(b, t, 10, "base", "control").set_index("firm_id")
+    post = b[b.project_id > 10].merge(t, on=["run_id", "project_id", "firm_id"])
+    post["m"] = (post.bid - post.cost) / post.est
+    lead_mask = post.groupby("project_id")["cost"].transform("min") == post["cost"]
+    c = post[post.firm_id == "C"]
+    cl, ct = c[lead_mask[c.index]], c[~lead_mask[c.index]]
+    assert len(cl) >= 8 and len(ct) >= 1
+    assert abs(tab.loc["C", "margin_when_leading"] - cl.m.median()) < 1e-12
+    assert abs(tab.loc["C", "margin_when_trailing"] - 0.02) < 1e-9
+    assert abs(tab.loc["C", "margin_when_trailing"] - ct.m.median()) < 1e-12
+    assert tab.loc["C", "margin_when_leading"] > tab.loc["C", "margin_when_trailing"] + 0.005
+
+
+def test_wins_profit_include_burn_in():
+    b, t = build(mixed)
+    tab = rg.firm_season_table(b, t, 10, "base", "control").set_index("firm_id")
+    w = b[b.won == 1].merge(t, on=["run_id", "project_id", "firm_id"])
+    d = w[w.firm_id == "D"]
+    assert (d.project_id <= 10).any() and (d.project_id > 10).any()
+    assert tab.loc["D", "wins"] == len(d) > len(d[d.project_id > 10])
+    assert abs(tab.loc["D", "profit"] - (d.bid - d.cost).sum()) < 1e-9
+    assert tab.loc["D", "profit"] > (d[d.project_id > 10].bid - d[d.project_id > 10].cost).sum()
+
+
+def test_a3_filters_and_arms():
+    tab = pd.DataFrame({"run_id": [RID] * 3 + ["r2"] * 2, "firm_id": list("ABC") + list("AB"),
+                        "regime": ["razor", "fat", "razor", "fat", "razor"]})
+    base = dict(run_id=RID, spec="tag_filtered", primary=1, complete=1, condition="control", arm="base",
+                firm_i="A", firm_j="B", a3_flag=1)
+    rows = [dict(base),
+            dict(base, firm_i="B", firm_j="C", a3_flag=0),
+            dict(base, spec="tag"), dict(base, complete=0), dict(base, condition="cartel"),
+            dict(base, primary=0), dict(base, a3_flag=np.nan),
+            dict(base, run_id="r2", arm="mem0", firm_i="A", firm_j="B", a3_flag=0),
+            dict(base, run_id="r2", arm="mem0", firm_i="B", firm_j="A", a3_flag=1)]
+    out = rg.a3_by_pair_type(pd.DataFrame(rows), tab)
+    got = {(r.arm, r.regime_i, r.regime_j): (r.n_pairs, r.n_rejected, r.rate) for r in out.itertuples()}
+    assert got[("base", "fat", "razor")] == (2, 1, 0.5)
+    assert ("base", "razor", "razor") not in got
+    assert sum(v[0] for k, v in got.items() if k[0] == "base") == 2
+    assert got[("mem0", "fat", "razor")] == (2, 1, 0.5)
+
+
+def test_slope_dispersion_exact_and_by_arm():
+    def fn(f, p, o, g, c):
+        return o + 0.02 * EST
+    b, t = build(fn, n=110)
+    b["bid"] = [r.bid + (EST * (0.1 * np.log1p(r.dist) + 0.3 * r.cap) if r.firm_id == "A" else 0)
+                for r in b.itertuples()]
+    rows = rg.slope_dispersion(b, t, 10, "base", RID)
+    for r in rows:
+        assert abs(r["sd_dist_slope"] - 0.1 / np.sqrt(6)) < 1e-9
+        assert abs(r["sd_cap_slope"] - 0.3 / np.sqrt(6)) < 1e-9
+    hand = [dict(arm="a", run_id="r1", half="11-60", sd_cap_slope=0.1, sd_dist_slope=0.4),
+            dict(arm="a", run_id="r2", half="11-60", sd_cap_slope=0.3, sd_dist_slope=0.2),
+            dict(arm="a", run_id="r1", half="61-110", sd_cap_slope=0.5, sd_dist_slope=0.5),
+            dict(arm="b", run_id="r3", half="11-60", sd_cap_slope=0.7, sd_dist_slope=0.1)]
+    agg = rg.slope_dispersion_by_arm(hand).set_index(["arm", "half"])
+    assert agg.loc[("a", "11-60"), "n_runs"] == 2
+    assert abs(agg.loc[("a", "11-60"), "mean_sd_cap_slope"] - 0.2) < 1e-12
+    assert abs(agg.loc[("a", "11-60"), "mean_sd_dist_slope"] - 0.3) < 1e-12
+    assert agg.loc[("a", "61-110"), "n_runs"] == 1 and agg.loc[("b", "11-60"), "mean_sd_cap_slope"] == 0.7
+
+
+def test_nan_paths():
+    # A passes every post-burn-in project; F is always the highest-cost firm so gap <= 0 (no shade rows)
+    def fn(f, p, o, g, c):
+        return 9_999_999.0 if f == "A" and p > 10 else o + 0.03 * EST
+    b, t = build(fn, offsets={"F": 0.3})
+    tab = rg.firm_season_table(b, t, 10, "base", "control").set_index("firm_id")
+    assert tab.loc["A", "regime"] == "passer" and tab.loc["A", "pass_rate"] == 1.0
+    assert np.isnan(tab.loc["A", "margin_med"]) and np.isnan(tab.loc["A", "margin_iqr"])
+    assert np.isnan(tab.loc["A", "margin_when_leading"]) and np.isnan(tab.loc["A", "shade_slope"])
+    assert np.isnan(tab.loc["F", "shade_slope"]) and np.isnan(tab.loc["F", "margin_when_leading"])
+    assert tab.loc["F", "regime"] == "moderate"
