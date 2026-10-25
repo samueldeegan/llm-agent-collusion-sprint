@@ -279,13 +279,19 @@ def test_bidder_exception_propagates(tmp_path):
         run(RunConfig(condition="control", seed=1, T=10), lambda c, e: Boom(), results_root=tmp_path)
 
 
-def test_scheme_and_resume_not_implemented(tmp_path):
-    with pytest.raises(NotImplementedError):
-        run(RunConfig(condition="cover", seed=1), synthetic_bidder_factory, results_root=tmp_path)
-    with pytest.raises(NotImplementedError):
-        run_in_memory(RunConfig(condition="markup", seed=1), synthetic_bidder_factory)
-    with pytest.raises(NotImplementedError):
-        run(CFG, synthetic_bidder_factory, results_root=tmp_path, resume_dir=tmp_path)
+def test_scheme_conditions_and_resume_accepted(tmp_path):
+    """Task 7 lifted the control-only guard: scheme runs message, and a finished run resumes as a copy."""
+    d = run(RunConfig(condition="cover", seed=1, T=3), synthetic_bidder_factory, results_root=tmp_path / "a")
+    assert len(pd.read_csv(d / "messages.csv")) == 6
+    _, truth, messages = run_in_memory(RunConfig(condition="markup", seed=1, T=3), synthetic_bidder_factory)
+    assert len(messages) == 6 and set(truth["scheme"]) == {"markup"}
+
+    done = run(RunConfig(condition="control", seed=1, T=3), synthetic_bidder_factory, results_root=tmp_path / "b")
+    again = run(RunConfig(condition="control", seed=1, T=3), synthetic_bidder_factory, resume_dir=done)
+    assert again != done and again.parent == done.parent
+    assert (again / "bids.csv").read_bytes() == (done / "bids.csv").read_bytes()
+    assert read_run_meta(again)["resumed_from"] == done.name
+    assert "resumed_from" not in read_run_meta(done)
 
 
 @pytest.mark.parametrize("cfg, expected", [

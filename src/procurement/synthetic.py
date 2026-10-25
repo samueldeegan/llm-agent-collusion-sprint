@@ -59,9 +59,9 @@ class SyntheticBidder:
             b = self._serious(ctx)
         elif ctx.role == "cover":
             s = None
-            # takes the partner's latest message carrying intended_serious_bid
+            # the partner's latest message carrying intended_serious_bid; never its own message
             for m in ctx.messages:
-                if m.get("intended_serious_bid") is not None:
+                if m.get("sender") != ctx.seat and m.get("intended_serious_bid") is not None:
                     s = float(m["intended_serious_bid"])
             if s is None:
                 b = round(h + ctx.run.scripted_margin * est, 2)
@@ -72,9 +72,11 @@ class SyntheticBidder:
         return BidResult(bid=b, reason="", parsed=None, raw=None, call_records=[])
 
     def message(self, ctx: BidContext) -> MessageResult:
+        """No free text: ``Channel.deliver`` renders the two numeric sentences of
+        ``scheme_message_text`` from ``my_cost`` and ``intended_serious_bid``."""
         intended = self._serious(ctx)
-        return MessageResult(text=scheme_message_text(ctx.cost, intended), my_cost=ctx.cost,
-                             intended_serious_bid=intended, reason="", raw=None, call_records=[])
+        return MessageResult(text="", my_cost=ctx.cost, intended_serious_bid=intended, reason="",
+                             raw=None, call_records=[])
 
 
 def synthetic_bidder_factory(cfg: RunConfig, env: Environment) -> Bidder:

@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from src.procurement.channel import Channel
 from src.procurement.config import CostParams, RunConfig
 from src.procurement.environment import generate_environment, cost_of
 from src.procurement.synthetic import (honest_bid, simulate_table, SyntheticBidder,
@@ -217,5 +218,24 @@ def test_bidder_message_text():
     ctx, env = _ctx("serious", [], seat=0)
     est = float(env.est[ctx.t]); h = honest_bid(ctx.cost, est, bidder.noise[0, ctx.t])
     r = bidder.message(ctx)
-    assert r.text == f"Cost: ${ctx.cost:,.0f}. If I am the serious bidder I intend to bid ${h:,.0f}."
+    assert r.text == ""  # Channel.deliver adds the two numeric sentences once
     assert r.intended_serious_bid == h and r.my_cost == ctx.cost
+    delivered = Channel(CART, "cover").deliver(r)
+    assert delivered == f"Cost: ${ctx.cost:,.0f}. If I am the serious bidder I intend to bid ${h:,.0f}."
+    assert delivered == scheme_message_text(ctx.cost, h)
+
+
+def test_bidder_cover_reads_partner_message_not_own():
+    bidder = SyntheticBidder(SEED, COST)
+    X, Y = 1_100_000.0, 2_500_000.0
+    partner = {"sender": 0, "recipient": 1, "my_cost": 1.0, "intended_serious_bid": X, "text": ""}
+    own = {"sender": 1, "recipient": 0, "my_cost": 2.0, "intended_serious_bid": Y, "text": ""}
+    for msgs in ([partner, own], [own, partner]):
+        ctx, env = _ctx("cover", msgs)
+        est = float(env.est[ctx.t])
+        expected = round(X + 0.01 * est, 2)
+        assert bidder.bid(ctx).bid == expected
+    assert expected != round(Y + 0.01 * est, 2)
+    ctx, env = _ctx("cover", [own])  # only its own message: falls back to h + margin*E
+    h = honest_bid(ctx.cost, est, bidder.noise[1, ctx.t])
+    assert bidder.bid(ctx).bid == round(h + 0.10 * est, 2)
