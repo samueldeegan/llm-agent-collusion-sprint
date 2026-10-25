@@ -1,7 +1,7 @@
 """Launcher: one OS process per run, a monitor loop (exits, stalls, spend), file-based stop, time ladder.
 
 ``python -m src.procurement.launcher --plan config/run_plan.json [--dry-run] [--allow-unfrozen]
-[--poll-s 60] [--results-root results/runs]`` (spec §4f, §4g stop semantics and concurrency cap;
+[--poll-s 60] [--results-root results/runs] [--ignore-live]`` (spec §4f, §4g stop semantics and concurrency cap;
 A46, A49-A54, A95; step-4 audit Part 2 and Part 4.2 steps 7-8).
 
 Every launch works in a new ``<results>/launches/<UTC yyyymmdd_HHMMSS>/`` (never overwritten):
@@ -13,15 +13,21 @@ atomically every poll). Each run is ``python -m src.procurement.runner --config 
 API key never appears on a command line, in a file or in a log.
 
 Exit codes: 0 every run done; 2 spend stop (audit 4.3 condition 2); 5 pre-flight refusal (no
-``config/frozen.json``, an unusable ``calibration.json``, a key variable not set) or a run's
-``FatalAPIError`` (all runs stopped); 6 every run terminal but not all done; 7 time ladder stop
+``config/frozen.json``, an unusable or invalid ``calibration.json``, a key variable not set,
+``--bidder synthetic`` or ``--allow-unfrozen`` in a real launch into ``results/runs``, an unfinished
+matching run with activity within ``stall_s`` and no ``--ignore-live``) or a run's ``FatalAPIError``
+(all runs stopped); 6 every run terminal but not all done; 7 time ladder stop
 (nothing launched by deadline - 2.5 h). If the launcher itself fails or is interrupted, it stops every
 child (STOP files, ``STOP.json`` reason ``launcher_error`` / ``interrupted``) before re-raising.
 
 The spend guard covers total spend: at start it sums every ``calls.csv`` already under the results
 root and ``calibration_runs/`` (the baseline) and adds this launch's runs to it. A (condition, seed)
 that already has a finished experiment run with the same configuration is skipped
-(``skipped_done``) unless ``--rerun-finished``. Relative paths given to ``--plan``, ``--frozen``,
+(``skipped_done``) unless ``--rerun-finished``; one with a stale unfinished matching run resumes from
+the latest checkpointed one (``--resume-dir``, counted as its one restart; manifest ``resume_dir``).
+When runs of the plan already exist, T stays at theirs whatever the time ladder gives. Every run
+config comes from ``config.run_plan(..., defaults=config/defaults.json)`` (the scripts' helper), with
+the frozen cost parameters and the plan's T. Relative paths given to ``--plan``, ``--frozen``,
 ``--calibration``, ``--decisions`` and ``--results-root`` resolve against the repository root.
 
 Inputs read here and written elsewhere (only these keys are read):
@@ -33,7 +39,8 @@ Inputs read here and written elsewhere (only these keys are read):
      "measured": {"mean_latency_s": 10.2}}
 
 ``limits`` is per API key slot ("2" only when a second key was checked); a flat
-``"limits": {"requests": ..., "output_tokens": ...}`` is read as slot 1. Without the file (or without
+``"limits": {"requests": ..., "output_tokens": ...}`` is read as slot 1. With limits, R per condition is
+min(plan R, sized R). Without the file (or without
 slot-1 limits) the plan's R is used, the process cap is the plan size, only key 1 is used (A54: key 2
 only when the sizing rule calls for it) and a warning is printed. A file that exists but yields no
 slot-1 limits is refused in real mode (exit 5).
@@ -147,7 +154,8 @@ def slot_caps(limits_by_slot: dict, manifest: list[dict], call_s: float = 10.0, 
 
 def read_calibration(path) -> dict | None:
     """``{"limits": {slot: {...}}, "mean_latency_s": float | None}`` from ``results/calibration.json``
-    (schema in the module docstring); None when the file or its slot-1 limits are missing."""
+    (schema in the module docstring); None when the file or its slot-1 limits are missing, or the file
+    is invalid (not a JSON object, a slot key that is not an integer)."""
     path = Path(path)
     if not path.is_file():
         return None
@@ -160,11 +168,21 @@ def read_calibration(path) -> dict | None:
     raw = data.get("limits") or {}
     if "output_tokens" in raw or "requests" in raw:
         raw = {"1": raw}
-    limits = {int(k): v for k, v in raw.items() if isinstance(v, dict)}
+    if not isinstance(raw, dict):
+        return None
+    try:
+        limits = {int(k): v for k, v in raw.items() if isinstance(v, dict)}
+    except (TypeError, ValueError):  # a slot key that is not an integer: an invalid file
+        return None
     if not limits.get(1) or limits[1].get("output_tokens") is None:
         return None
-    lat = (data.get("measured") or {}).get("mean_latency_s")
-    return {"limits": limits, "mean_latency_s": float(lat) if lat else None}
+    measured = data.get("measured")
+    lat = measured.get("mean_latency_s") if isinstance(measured, dict) else None
+    try:
+        lat = float(lat) if lat else None
+    except (TypeError, ValueError):
+        lat = None
+    return {"limits": limits, "mean_latency_s": lat}
 
 
 def read_frozen(path, base: CostParams) -> CostParams:
@@ -433,7 +451,9 @@ class _Run:
         self.state = "queued"
         self.proc = None
         self.attempts = 0
-        self.restarts = 0
+        # a relaunch resuming an unfinished run (B5) starts with --resume-dir; it uses the restart budget
+        self.initial_resume = Path(entry["resume_dir"]) if entry.get("resume_dir") else None
+        self.restarts = 1 if self.initial_resume is not None else 0
         self.current_dir: Path | None = None  # this attempt's announced run dir
         self.run_dirs: list[Path] = []  # every attempt's, in order
         self.exit_code: int | None = None
@@ -535,7 +555,7 @@ class Launcher:
             return False
         for run in self.runs:
             if run.state == "queued" and self._slot_free(run.slot):
-                self._start(run, resume_dir=None)
+                self._start(run, resume_dir=run.initial_resume)
                 self.next_start_at = now + timedelta(seconds=self.stagger_s)
                 return True
         return False
@@ -780,7 +800,7 @@ def _append_decision(path: Path, now: datetime, decision: str, reason: str) -> N
 
 
 def _cost_from_defaults(defaults: dict) -> CostParams:
-    return CostParams(**{k: tuple(v) if isinstance(v, list) else v for k, v in defaults["cost"].items()})
+    return config.cost_from_defaults(defaults)
 
 
 def _repo_path(value) -> Path:
@@ -789,15 +809,12 @@ def _repo_path(value) -> Path:
     return p if p.is_absolute() else REPO_ROOT / p
 
 
-def finished_runs(results_root, plan: list[RunConfig]) -> dict[tuple[str, int], str]:
-    """(condition, seed) -> run dir name, for each plan entry that already has a finished experiment
-    run under ``results_root`` with the same configuration (the runner's resume check: condition,
-    seed, T, cartel seats, N, bidder, model, scripted fields, cost parameters)."""
-    by_key = {(c.condition, c.seed): c for c in plan}
-    found: dict[tuple[str, int], str] = {}
+def _experiment_metas(results_root) -> list[tuple[Path, dict]]:
+    """(dir, run_meta) of every experiment run dir directly under ``results_root``, by name."""
     root = Path(results_root)
+    out = []
     if not root.is_dir():
-        return found
+        return out
     for d in sorted(root.iterdir()):
         if not d.is_dir():
             continue
@@ -805,7 +822,20 @@ def finished_runs(results_root, plan: list[RunConfig]) -> dict[tuple[str, int], 
             meta = io.read_run_meta(d)
         except (OSError, ValueError):
             continue
-        if meta.get("purpose") != "experiment" or meta.get("finished_utc") is None:
+        if isinstance(meta, dict) and meta.get("purpose") == "experiment":
+            out.append((d, meta))
+    return out
+
+
+def finished_runs(results_root, plan: list[RunConfig]) -> dict[tuple[str, int], str]:
+    """(condition, seed) -> run dir name, for each plan entry that already has a finished experiment
+    run under ``results_root`` with the same configuration (the runner's resume check: condition,
+    seed, T, cartel seats, N, bidder, model, windows, message cap, concurrency, scripted fields, cost
+    parameters)."""
+    by_key = {(c.condition, c.seed): c for c in plan}
+    found: dict[tuple[str, int], str] = {}
+    for d, meta in _experiment_metas(results_root):
+        if meta.get("finished_utc") is None:
             continue
         cfg = by_key.get((meta.get("condition"), meta.get("seed")))
         if cfg is not None and runner.same_run(cfg, meta):
@@ -813,8 +843,78 @@ def finished_runs(results_root, plan: list[RunConfig]) -> dict[tuple[str, int], 
     return found
 
 
+def existing_experiment_T(results_root, plan: list[RunConfig]) -> tuple[int | None, list[str]]:
+    """The T of the experiment runs already under ``results_root`` that belong to ``plan`` (the same run
+    as a plan entry except possibly T) and are finished or resumable (hold a checkpoint): ``(T, dir
+    names)``; ``(None, [])`` when there is none. Several T values: the most common; on a tie the plan's
+    own T when it is among them, else the latest run's."""
+    by_key = {(c.condition, c.seed): c for c in plan}
+    hits: list[tuple[int, str]] = []
+    for d, meta in _experiment_metas(results_root):
+        cfg = by_key.get((meta.get("condition"), meta.get("seed")))
+        T = meta.get("T")
+        if cfg is None or not isinstance(T, int) or isinstance(T, bool):
+            continue
+        if meta.get("finished_utc") is None and not (d / "checkpoint.json").is_file():
+            continue
+        if runner.same_run(replace(cfg, T=T), meta):
+            hits.append((T, d.name))
+    if not hits:
+        return None, []
+    counts: dict[int, int] = {}
+    for T, _ in hits:
+        counts[T] = counts.get(T, 0) + 1
+    best = max(counts.values())
+    tied = [t for t, _ in hits if counts[t] == best]
+    plan_T = {c.T for c in plan}
+    T = next((t for t in tied if t in plan_T), tied[-1])
+    return T, [name for _, name in hits]
+
+
+def _last_activity_of(run_dir: Path) -> datetime | None:
+    """``last_activity_utc`` of a run dir's heartbeat; without a readable heartbeat, the mtime of its
+    run_meta.json (a run that has just started)."""
+    try:
+        hb = json.loads((run_dir / "heartbeat.json").read_text(encoding="utf-8"))
+        t = datetime.fromisoformat(str(hb["last_activity_utc"]))
+        return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        return datetime.fromtimestamp((run_dir / "run_meta.json").stat().st_mtime, timezone.utc)
+    except OSError:
+        return None
+
+
+def unfinished_runs(results_root, plan: list[RunConfig], now: datetime, stall_s: float
+                    ) -> tuple[dict[tuple[str, int], list[str]], dict[tuple[str, int], Path]]:
+    """Unfinished experiment dirs matching a plan entry (``runner.same_run``): ``(live, resume)``.
+    ``live[(condition, seed)]``: the dir names whose last activity is within ``stall_s`` of ``now``;
+    ``resume[(condition, seed)]``: the latest (by name) unfinished matching dir holding a
+    ``checkpoint.json``, for the entries with no live dir."""
+    by_key = {(c.condition, c.seed): c for c in plan}
+    live: dict[tuple[str, int], list[str]] = {}
+    resume: dict[tuple[str, int], Path] = {}
+    for d, meta in _experiment_metas(results_root):
+        if meta.get("finished_utc") is not None:
+            continue
+        key = (meta.get("condition"), meta.get("seed"))
+        cfg = by_key.get(key)
+        if cfg is None or not runner.same_run(cfg, meta):
+            continue
+        last = _last_activity_of(d)
+        if last is not None and (now - last).total_seconds() <= stall_s:
+            live.setdefault(key, []).append(d.name)
+        if (d / "checkpoint.json").is_file():
+            resume[key] = d  # sorted by name: the latest wins
+    return live, {k: v for k, v in resume.items() if k not in live}
+
+
 def _r_text(R: dict) -> str:
     return "/".join(str(R.get(c, 0)) for c in CONDITIONS) + " (control/cover/markup/rotation)"
+
+
+DEFAULT_RESULTS_ROOT = "results/runs"
 
 
 def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None] | None = None,
@@ -824,26 +924,41 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     ap.add_argument("--plan", required=True, help="config/run_plan.json")
     ap.add_argument("--dry-run", action="store_true", help="write manifest, configs and status; spawn nothing")
     ap.add_argument("--allow-unfrozen", action="store_true",
-                    help="tests and dry runs only: proceed without config/frozen.json (defaults.json costs)")
+                    help="tests and dry runs only: proceed without config/frozen.json (defaults.json costs); "
+                         "refused in a real launch into results/runs")
     ap.add_argument("--poll-s", type=float, default=60.0)
-    ap.add_argument("--results-root", default="results/runs")
+    ap.add_argument("--results-root", default=DEFAULT_RESULTS_ROOT)
     ap.add_argument("--frozen", default="config/frozen.json")
     ap.add_argument("--calibration", default=None, help="default: <results>/calibration.json")
     ap.add_argument("--decisions", default="docs/superpowers/DECISIONS.md")
-    ap.add_argument("--bidder", default="llm", choices=("llm", "synthetic"))
+    ap.add_argument("--bidder", default="llm", choices=("llm", "synthetic"),
+                    help="synthetic is refused in a real launch into results/runs")
     ap.add_argument("--stagger-s", type=float, default=5.0)
     ap.add_argument("--rerun-finished", action="store_true",
                     help="also launch (condition, seed) pairs that already have a finished matching run")
+    ap.add_argument("--ignore-live", action="store_true",
+                    help="start even when an unfinished matching run shows activity within stall_s")
     args = ap.parse_args(argv)
     clock = clock or _utc_now
     sleep = sleep or time.sleep
     popen = popen or subprocess.Popen
 
-    defaults = config.load_defaults()
-    plan_file = json.loads(_repo_path(args.plan).read_text(encoding="utf-8"))
     results_root = _repo_path(args.results_root).resolve()
     results_dir = results_root.parent
+    # the experiment's own results root takes only real, frozen runs (B3); before any file is written
+    if not args.dry_run and results_root == _repo_path(DEFAULT_RESULTS_ROOT).resolve():
+        for flag, bad in (("--bidder synthetic", args.bidder == "synthetic"),
+                          ("--allow-unfrozen", args.allow_unfrozen)):
+            if bad:
+                print(f"launcher: refusing to start: {flag} in a real launch into the experiment results "
+                      f"root {DEFAULT_RESULTS_ROOT} (pass a different --results-root, or --dry-run)",
+                      file=sys.stderr)
+                return EXIT_PREFLIGHT
+
+    defaults = config.load_defaults()
+    plan_file = json.loads(_repo_path(args.plan).read_text(encoding="utf-8"))
     frozen_path, decisions = _repo_path(args.frozen), _repo_path(args.decisions)
+    stall_s = float(defaults.get("stall_s", 600))
 
     # frozen cost parameters (audit 4.2 step 6)
     cost, frozen_from = _cost_from_defaults(defaults), None
@@ -862,23 +977,26 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
         print(f"launcher: warning: {args.frozen} not found; using config/defaults.json cost parameters",
               file=sys.stderr)
 
-    # sizing rule and caps (A46, §4g concurrency cap)
+    # sizing rule and caps (A46, §4g concurrency cap); R = per-condition min(plan R, sized R)
     has_key2 = bool(os.environ.get(KEY_VARS[2]))
     cal_path = _repo_path(args.calibration) if args.calibration else results_dir / "calibration.json"
     cal = read_calibration(cal_path)
     if cal is None and cal_path.is_file():
-        msg = f"{cal_path} exists but yields no slot-1 limits (limits.output_tokens)"
+        msg = f"{cal_path} exists but yields no slot-1 limits (limits.output_tokens) or is invalid"
         if not args.dry_run:
             print(f"launcher: refusing to start: {msg}", file=sys.stderr)
             return EXIT_PREFLIGHT
         print(f"launcher: warning: {msg}", file=sys.stderr)
+    plan_R = dict(plan_file["R"])
     if cal is not None:
         sized = apply_sizing(cal["limits"][1], has_key2)
-        R, keys = sized["R"], sized["keys"]
+        keys = sized["keys"]
+        R = {c: min(int(plan_R.get(c, 0)), int(sized["R"].get(c, 0))) for c in {**plan_R, **sized["R"]}}
         sizing = (f"sizing rule from {cal_path.name}: output-tokens limit {cal['limits'][1]['output_tokens']}, "
-                  f"key 2 {'set' if has_key2 else 'not set'}")
+                  f"key 2 {'set' if has_key2 else 'not set'}; sized R {_r_text(sized['R'])}, plan R "
+                  f"{_r_text(plan_R)} -> R {_r_text(R)} (per-condition minimum)")
     else:
-        R, keys = dict(plan_file["R"]), 1
+        R, keys = plan_R, 1
         sizing = f"no calibration limits ({cal_path}): R from the plan, cap = plan size, one key"
         if has_key2:
             sizing += f"; {KEY_VARS[2]} is set but ignored (A54: key 2 only when the sizing rule calls for it)"
@@ -895,26 +1013,61 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     plan = {"R": R, "include_rotation": bool(plan_file.get("include_rotation", True)),
             "T": int(plan_file.get("T", defaults["T"]))}
 
-    # time ladder (audit 4.2)
+    def configs(p: dict) -> list[RunConfig]:  # the single settings source (A1): config/defaults.json
+        return config.run_plan(p["R"], p["include_rotation"], p["T"], defaults=defaults, cost=cost,
+                               bidder=args.bidder, results_root=str(results_root))
+
+    # T of the runs already made for this plan: never changed mid-experiment (C5)
+    existing_T, existing_names = existing_experiment_T(results_root, configs(plan))
+
+    # time ladder (audit 4.2): may lower R and drop rotation; T stays at the existing runs' T
     now = clock()
     deadline = datetime.fromisoformat(plan_file["deadline_utc"].replace("Z", "+00:00"))
     plan, rung, stop = time_ladder(now, deadline, False, plan)
     rung_lines = [f"time ladder rung {k} (not launched by deadline - {LADDER[k][0]:g} h, "
                   f"deadline {plan_file['deadline_utc']}): {LADDER[k][1]}" for k in range(1, rung + 1)]
-    if not args.dry_run:
-        for line in rung_lines:
-            _append_decision(decisions, now, line, "audit Part 4.2 time ladder")
+    t_line = None
+    if existing_T is not None:
+        if plan["T"] != existing_T:
+            t_line = (f"T kept at {existing_T} (the T of {len(existing_names)} existing experiment run(s) of "
+                      f"this plan; the ladder would give T {plan['T']})")
+        plan["T"] = existing_T
     if stop:
+        if not args.dry_run:
+            for line in rung_lines:
+                _append_decision(decisions, now, line, "audit Part 4.2 time ladder")
         print(f"launcher: {rung_lines[-1]}; nothing launched", file=sys.stderr)
         return EXIT_LADDER
 
-    runs = config.run_plan(plan["R"], plan["include_rotation"], plan["T"])
-    runs = [replace(c, cost=cost, bidder=args.bidder, results_root=str(results_root)) for c in runs]
+    runs = configs(plan)
     done = {} if args.rerun_finished else finished_runs(results_root, runs)
     skipped = [{"name": f"{c}_s{s}", "condition": c, "seed": s, "run_dir": str(results_root / d)}
                for (c, s), d in sorted(done.items())]
     runs = [c for c in runs if (c.condition, c.seed) not in done]
+
+    # relaunch safety (B5): a live unfinished run refuses the launch; a stale checkpointed one resumes
+    live, resume = unfinished_runs(results_root, runs, now, stall_s)
+    if live and not args.ignore_live:
+        names = "; ".join(f"{c}_s{s}: {', '.join(v)}" for (c, s), v in sorted(live.items()))
+        msg = (f"unfinished run(s) with activity in the last {stall_s:g} s, probably still running: {names} "
+               "(stop them first, or pass --ignore-live)")
+        if not args.dry_run:
+            print(f"launcher: refusing to start: {msg}", file=sys.stderr)
+            return EXIT_PREFLIGHT
+        print(f"launcher: warning: a real launch would refuse: {msg}", file=sys.stderr)
+    if live:  # --ignore-live: a live run is treated as stale
+        resume = unfinished_runs(results_root, runs, now, -1.0)[1]
+
+    if not args.dry_run:
+        for line in rung_lines:
+            _append_decision(decisions, now, line, "audit Part 4.2 time ladder")
+        if t_line is not None:
+            _append_decision(decisions, now, t_line, "never change T mid-experiment (final review C5)")
+
     manifest = build_manifest(runs, keys, args.stagger_s)
+    for e in manifest:
+        d = resume.get((e["condition"], e["seed"]))
+        e["resume_dir"] = None if d is None else str(d)
     limits_by_slot = cal["limits"] if cal else {}
     caps = slot_caps(limits_by_slot, manifest, call_s)
     cap, calls = sum(caps.values()), planned_calls(runs)
@@ -931,7 +1084,7 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
                                header={"created_utc": _iso(now), **info, "planned_calls": calls})
     lau = Launcher(manifest, workspace, results_root, caps=caps, pricing=pricing, planned_calls=calls,
                    clock=clock, sleep=sleep, popen=popen, poll_s=args.poll_s,
-                   stall_s=float(defaults.get("stall_s", 600)), stop_usd=float(defaults.get("spend_stop_usd", 75)),
+                   stall_s=stall_s, stop_usd=float(defaults.get("spend_stop_usd", 75)),
                    stagger_s=args.stagger_s, info=info, skipped=skipped)
     per_cond = ", ".join(f"{c} {counts[c]}" for c in LAUNCH_ORDER)
     slots = ", ".join(f"{k}: {v}" for k, v in caps.items())
@@ -941,9 +1094,14 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     lau.log(f"planned calls {calls}; a-priori cost ${a_priori:.2f} at {A_PRIORI_INPUT / 1000:g}k input / "
             f"{A_PRIORI_OUTPUT / 1000:g}k output tokens per call")
     lau.log(sizing)
+    if t_line is not None:
+        lau.log(t_line)
     for x in skipped:
         lau.log(f"skip {x['name']}: finished matching run {Path(x['run_dir']).name} (skipped_done; "
                 "--rerun-finished to run it again)")
+    for (c, s), d in sorted(resume.items()):
+        lau.log(f"resume {c}_s{s}: unfinished run {d.name} restarts from its checkpoint (--resume-dir; "
+                "uses the one-restart budget)")
     lau.log(f"spend baseline ${lau.baseline[0]:.2f} over {lau.baseline[1]} calls in "
             f"{len(lau.baseline_dirs)} existing run dir(s)")
     lau.log(f"frozen parameters: {frozen_from or 'none (defaults.json)'}; time ladder: "

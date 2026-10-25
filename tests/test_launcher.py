@@ -922,3 +922,216 @@ def test_relative_paths_resolve_against_repo_root(tmp_path, monkeypatch, capsys)
     assert rc == 0 and "32 runs" in capsys.readouterr().out
     assert launcher._repo_path("docs/x.md") == launcher.REPO_ROOT / "docs/x.md"
     assert launcher._repo_path(tmp_path) == tmp_path
+
+
+# ---------------------------------------------------------------- final review fix wave
+
+def test_run_configs_from_defaults_json(tmp_path, monkeypatch, capsys):
+    """A1: every run config takes model, max_tokens, burn_in, N, windows, message cap and concurrency
+    from config/defaults.json, cost from frozen.json over defaults, and the plan's T."""
+    from src.procurement import config
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    real = config.load_defaults()
+    changed = {**real, "model": "claude-test-model", "max_tokens": 6000, "burn_in": 12, "history_window": 15,
+               "memory_window": 7, "max_message_length": 300, "concurrency": 3,
+               "cost": {**real["cost"], "honest_noise": 0.04}}
+    monkeypatch.setattr(config, "load_defaults", lambda *a, **k: changed)
+    results = tmp_path / "results"
+    assert launcher.main(["--plan", str(_plan_file(tmp_path, T=100)), "--dry-run", "--frozen", str(_frozen(tmp_path)),
+                          "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")],
+                         clock=FakeClock()) == 0
+    (ws,) = (results / "launches").iterdir()
+    configs = sorted((ws / "configs").glob("*.json"))
+    assert len(configs) == 32
+    for path in configs:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        assert (d["model"], d["max_tokens"], d["burn_in"], d["N"], d["history_window"], d["memory_window"],
+                d["max_message_length"], d["concurrency"], d["T"]) == (
+            "claude-test-model", 6000, 12, 6, 15, 7, 300, 3, 100), path.name
+        assert d["cost"]["beta0"] == 0.93 and d["cost"]["honest_noise"] == 0.04
+
+
+def test_refuses_synthetic_or_unfrozen_into_default_root(tmp_path, monkeypatch, capsys):
+    """B3: a real launch into results/runs refuses --bidder synthetic and --allow-unfrozen (exit 5,
+    nothing written); another results root is fine."""
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", SECRET)
+    launches = launcher.REPO_ROOT / "results" / "launches"
+    before = sorted(launches.iterdir()) if launches.is_dir() else []
+    plan = str(_plan_file(tmp_path))
+    for extra in (["--bidder", "synthetic", "--frozen", str(_frozen(tmp_path))],
+                  ["--allow-unfrozen", "--frozen", str(tmp_path / "none.json")],
+                  ["--bidder", "synthetic", "--allow-unfrozen", "--results-root", "results/runs"]):
+        rc = launcher.main(["--plan", plan, "--decisions", str(tmp_path / "D.md"), *extra], clock=FakeClock(),
+                           popen=_no_popen)
+        assert rc == 5, extra
+        assert "refusing to start" in capsys.readouterr().err
+    assert (sorted(launches.iterdir()) if launches.is_dir() else []) == before
+    assert not (tmp_path / "D.md").exists()
+    # elsewhere: allowed
+    assert launcher.main(["--plan", plan, "--bidder", "synthetic", "--allow-unfrozen", "--dry-run",
+                          "--frozen", str(tmp_path / "none.json"), "--results-root", str(tmp_path / "r" / "runs"),
+                          "--decisions", str(tmp_path / "D.md")], clock=FakeClock()) == 0
+    clock = FakeClock()
+    popen = FakePopen(clock)
+    assert launcher.main(["--plan", str(_plan_file(tmp_path, R={"control": 1})), "--bidder", "synthetic",
+                          "--allow-unfrozen", "--frozen", str(tmp_path / "none.json"), "--poll-s", "5",
+                          "--results-root", str(tmp_path / "r2" / "runs"), "--decisions", str(tmp_path / "D.md")],
+                         clock=clock, sleep=clock.sleep, popen=popen) == 0
+    assert len(popen.calls) == 1
+
+
+def test_plan_R_caps_sized_R(tmp_path, monkeypatch, capsys):
+    """B4: with calibration limits R is the per-condition minimum of the plan's R and the sized R."""
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    monkeypatch.delenv("ANTHROPIC_API_KEY_2", raising=False)
+    results = tmp_path / "results"
+    results.mkdir()
+    (results / "calibration.json").write_text(json.dumps({
+        "limits": {"1": {"requests": 4000, "input_tokens": 4_000_000, "output_tokens": 1_000_000}}}),
+        encoding="utf-8")
+    plan = _plan_file(tmp_path, R={"control": 0, "cover": 1, "markup": 0, "rotation": 0})
+    assert launcher.main(["--plan", str(plan), "--dry-run", "--allow-unfrozen", "--frozen", str(tmp_path / "n.json"),
+                          "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")],
+                         clock=FakeClock()) == 0
+    (ws,) = (results / "launches").iterdir()
+    status = json.loads((ws / "status.json").read_text(encoding="utf-8"))
+    assert [(r["condition"], r["seed"]) for r in status["runs"]] == [("cover", 1)]
+    assert status["R"] == {"control": 0, "cover": 1, "markup": 0, "rotation": 0}
+    log = (ws / "launcher.log").read_text(encoding="utf-8")
+    assert "sized R 12/12/4/4" in log and "plan R 0/1/0/0" in log and "-> R 0/1/0/0" in log
+
+
+def test_read_calibration_non_integer_slot(tmp_path, capsys, monkeypatch):
+    """C6: a non-integer slot key is an invalid calibration file: None, refused in real mode (exit 5)."""
+    path = tmp_path / "results" / "calibration.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"limits": {"1": {"requests": 1000, "output_tokens": 400000},
+                                           "two": {"requests": 1}}}), encoding="utf-8")
+    assert launcher.read_calibration(path) is None
+    path.with_name("c2.json").write_text(json.dumps({"limits": [1, 2]}), encoding="utf-8")
+    assert launcher.read_calibration(path.with_name("c2.json")) is None
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", SECRET)
+    rc = launcher.main(["--plan", str(_plan_file(tmp_path)), "--frozen", str(_frozen(tmp_path)),
+                        "--results-root", str(tmp_path / "results" / "runs"), "--decisions", str(tmp_path / "D.md")],
+                       clock=FakeClock(), popen=_no_popen)
+    assert rc == 5 and "refusing to start" in capsys.readouterr().err
+    assert not (tmp_path / "results" / "launches").exists()
+
+
+def _experiment_dir(root: Path, cfg: RunConfig, name: str, *, finished=False, checkpoint=False,
+                    activity: datetime | None = None) -> Path:
+    """A run dir with the run_meta the runner writes for ``cfg`` (purpose experiment)."""
+    from src.procurement.environment import generate_environment
+    d = root / name
+    d.mkdir(parents=True)
+    meta = runner.make_run_meta(cfg, generate_environment(cfg.seed, cfg.cost, cfg.T, cfg.N))
+    meta["finished_utc"] = "2026-10-25T11:00:00+00:00" if finished else None
+    io.write_run_meta(d, meta)
+    if activity is not None:
+        io.write_heartbeat(d, 3, activity, activity)
+    if checkpoint:
+        io.write_checkpoint(d, {"last_completed_project": 3})
+    return d
+
+
+def _synthetic_cfg(condition, seed, T=12):
+    from src.procurement import config
+    return config.run_config_from_defaults(config.load_defaults(), condition=condition, seed=seed, T=T,
+                                           bidder="synthetic")
+
+
+def _relaunch_args(tmp_path, root, R, T=12, extra=()):
+    return ["--plan", str(_plan_file(tmp_path, R=R, T=T)), "--bidder", "synthetic", "--allow-unfrozen",
+            "--frozen", str(tmp_path / "none.json"), "--results-root", str(root), "--poll-s", "5",
+            "--stagger-s", "0", "--decisions", str(tmp_path / "D.md"), *extra]
+
+
+def test_relaunch_live_run_refused(tmp_path, capsys):
+    """B5: an unfinished matching run with activity within stall_s refuses the launch (exit 5) unless
+    --ignore-live."""
+    root = tmp_path / "results" / "runs"
+    live = _experiment_dir(root, _synthetic_cfg("cover", 1), "20261025_115000_cover_s1", checkpoint=True,
+                           activity=T0 - timedelta(seconds=60))
+    clock = FakeClock()
+    popen = FakePopen(clock)
+    rc = launcher.main(_relaunch_args(tmp_path, root, {"cover": 1}), clock=clock, sleep=clock.sleep, popen=popen)
+    assert rc == 5 and popen.calls == []
+    err = capsys.readouterr().err
+    assert "cover_s1" in err and live.name in err and "--ignore-live" in err
+    assert not (tmp_path / "results" / "launches").exists() and not (tmp_path / "D.md").exists()
+    assert launcher.main(_relaunch_args(tmp_path, root, {"cover": 1}, extra=["--dry-run"]), clock=clock) == 0
+    assert "a real launch would refuse" in capsys.readouterr().err  # a dry run only warns
+    rc = launcher.main(_relaunch_args(tmp_path, root, {"cover": 1}, extra=["--ignore-live"]), clock=clock,
+                       sleep=clock.sleep, popen=popen)
+    assert rc == 0 and _arg(popen.calls[0][2], "--resume-dir") == str(live)
+
+
+def test_relaunch_stale_checkpointed_run_resumed(tmp_path):
+    """B5: a stale unfinished run with a checkpoint is resumed with --resume-dir (the latest such dir);
+    the resume uses the one-restart budget, so a crash afterwards is final."""
+    root = tmp_path / "results" / "runs"
+    cfg = _synthetic_cfg("cover", 1)
+    _experiment_dir(root, cfg, "20261025_090000_cover_s1", checkpoint=True, activity=T0 - timedelta(hours=3))
+    latest = _experiment_dir(root, cfg, "20261025_100000_cover_s1", checkpoint=True,
+                             activity=T0 - timedelta(hours=2))
+    _experiment_dir(root, _synthetic_cfg("cover", 1, T=40), "20261025_110000_cover_s1", checkpoint=True,
+                    activity=T0 - timedelta(hours=1))  # another T: not the same run
+    clock = FakeClock()
+    popen = FakePopen(clock, lambda name, attempt: {"exit_at": 30, "code": 1})  # every attempt crashes
+    rc = launcher.main(_relaunch_args(tmp_path, root, {"cover": 1, "control": 1}), clock=clock,
+                       sleep=clock.sleep, popen=popen)
+    assert rc == 6
+    cover = [c for c in popen.calls if "cover" in c[0]]
+    assert len(cover) == 1 and _arg(cover[0][2], "--resume-dir") == str(latest)  # not restarted again
+    control = [c for c in popen.calls if "control" in c[0]]
+    assert len(control) == 2 and _arg(control[0][2], "--resume-dir") is None  # a fresh run keeps its restart
+    (ws,) = (tmp_path / "results" / "launches").iterdir()
+    manifest = json.loads((ws / "manifest.json").read_text(encoding="utf-8"))
+    assert {e["name"]: e["resume_dir"] for e in manifest["runs"]} == {"00_cover_s1": str(latest),
+                                                                       "01_control_s1": None}
+    status = json.loads((ws / "status.json").read_text(encoding="utf-8"))
+    st = {r["name"]: (r["state"], r["restarts"]) for r in status["runs"]}
+    assert st == {"00_cover_s1": ("failed", 1), "01_control_s1": ("failed", 1)}
+    assert "resume cover_s1: unfinished run " + latest.name in (ws / "launcher.log").read_text(encoding="utf-8")
+
+
+def test_relaunch_stale_run_without_checkpoint_fresh(tmp_path):
+    """B5: a stale unfinished run without a checkpoint is started fresh."""
+    root = tmp_path / "results" / "runs"
+    _experiment_dir(root, _synthetic_cfg("cover", 1), "20261025_100000_cover_s1",
+                    activity=T0 - timedelta(hours=2))
+    clock = FakeClock()
+    popen = FakePopen(clock)
+    assert launcher.main(_relaunch_args(tmp_path, root, {"cover": 1}), clock=clock, sleep=clock.sleep,
+                         popen=popen) == 0
+    assert len(popen.calls) == 1 and _arg(popen.calls[0][2], "--resume-dir") is None
+
+
+def test_relaunch_keeps_T_of_existing_runs(tmp_path):
+    """C5: with a finished or resumable run of the plan already there, the time ladder keeps that T
+    (never changing T mid-experiment) while still cutting R and dropping rotation."""
+    root = tmp_path / "results" / "runs"
+    _experiment_dir(root, _synthetic_cfg("cover", 1, T=110), "20261025_060000_cover_s1", finished=True)
+    decisions = tmp_path / "D.md"
+    clock = FakeClock(datetime(2026, 10, 26, 7, 59, tzinfo=timezone.utc))  # deadline - 4 h: rung 2
+    popen = FakePopen(clock, lambda name, a: {"exit_at": 10, "code": 0})
+    args = ["--plan", str(_plan_file(tmp_path, "2026-10-26T11:59:00Z")), "--allow-unfrozen", "--bidder",
+            "synthetic", "--frozen", str(tmp_path / "none.json"), "--results-root", str(root), "--poll-s", "5",
+            "--decisions", str(decisions)]
+    assert launcher.main(args, clock=clock, sleep=clock.sleep, popen=popen) == 0
+    (ws,) = (tmp_path / "results" / "launches").iterdir()
+    status = json.loads((ws / "status.json").read_text(encoding="utf-8"))
+    assert status["T"] == 110 and status["skipped_done"] == ["cover_s1"]
+    assert status["R"] == {"control": 12, "cover": 11, "markup": 2, "rotation": 0}
+    for path in (ws / "configs").glob("*.json"):
+        assert json.loads(path.read_text(encoding="utf-8"))["T"] == 110
+    text = decisions.read_text(encoding="utf-8")
+    assert "T = 80" in text and "T kept at 110" in text
+    # without the existing run the ladder lowers T as before
+    root2 = tmp_path / "other" / "runs"
+    args2 = [a if a != str(root) else str(root2) for a in args]
+    assert launcher.main(args2 + ["--dry-run"], clock=clock) == 0
+    (ws2,) = (tmp_path / "other" / "launches").iterdir()
+    assert json.loads((ws2 / "status.json").read_text(encoding="utf-8"))["T"] == 80
