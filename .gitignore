@@ -190,3 +190,6 @@ run-cmds*
 
 # Ignore other files
 pr-*.txt
+
+# git worktrees for parallel task branches
+.worktrees/
