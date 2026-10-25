@@ -6,8 +6,9 @@ keeps the control runs only (the round-1 scheme runs are not round-2 material) a
 ``out_dir``: ``flag_rates_by_arm.csv``, ``empirical_null_by_arm.csv``, ``fp_vs_T_by_arm.csv``,
 ``regimes_by_arm.csv``, ``regime_counts_by_arm.csv``, ``a3_by_pair_type_by_arm.csv``,
 ``slope_dispersion_by_arm.csv``, ``synthetic_floors.csv`` (base arm's complete control runs),
-``paired_by_seed.csv``, ``ablation_2x2.png`` and ``README.md``, which is also written to
-``results_root.parent / "README_round2.md"``.
+``paired_by_seed.csv``, ``flag_rates_at_base_threshold.csv`` (non-base arms at the base arm's p95,
+out-of-sample), ``ablation_2x2.png`` and ``README.md``; the same README is written to
+``results_root.parent / "README_round2.md"`` (the two differ only in the figure link, relative to each).
 
 Reads: what ``evaluation.evaluate`` reads, plus each selected control run's ``bids.csv``, ``truth.csv``
 and ``run_meta.json`` (regimes, slope dispersion, floors) and, for the spend, every ``calls.csv`` under
@@ -61,6 +62,11 @@ ROUND1_LOSS_NOTE = ("Round-1 transcripts: `round1_transcripts.zip` holds only th
                     "32 round-1 experiment runs' transcripts were deleted by accident on 2026-10-25 (~21:40 UTC) "
                     "before they were archived; their bids, truth, calls and run_meta remain under `results/runs/`.")
 
+SMOKE_SPEND_NOTE = ("Spend excludes the three 2026-10-24 pre-procurement smoke dirs "
+                    "(`results/20261024_214000_smoke_test`, `results/20261024_223137_haiku_smoke_test`, "
+                    "`results/20261024_232835_haiku_smoke_test`, older marketplace code): they have no call log, so "
+                    "their spend is not counted.")
+
 # palette: reference categorical slots in fixed order (dataviz skill, references/palette.md)
 _SURFACE, _INK, _INK2, _GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 _SERIES = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4")
@@ -102,6 +108,39 @@ def flag_rates_by_arm(pair_eval: pd.DataFrame, thresholds_by_arm: dict) -> pd.Da
         if len(fr):
             frames.append(fr.assign(arm=arm)[FLAG_COLUMNS])
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=FLAG_COLUMNS)
+
+
+BASE_THRESHOLD = "base_empirical"
+
+
+def flag_rates_at_base_threshold(pair_eval: pd.DataFrame, thresholds_by_arm: dict) -> pd.DataFrame:
+    """Out-of-sample rates: each non-base arm's control pairs against the BASE arm's empirical (p95)
+    thresholds (``FLAG_COLUMNS``; ``threshold = "base_empirical"``, ``in_sample = 0``). Empty when there is
+    no base threshold."""
+    base = thresholds_by_arm.get("base") or {}
+    ctrl = _control(pair_eval)
+    frames = []
+    for arm in (_arms_in(ctrl["arm"]) if len(ctrl) and base else []):
+        if arm == "base":
+            continue
+        fr = analysis.flag_rates(ctrl[ctrl["arm"] == arm], base)
+        fr = fr[fr["threshold"] == "empirical"]
+        if len(fr):
+            frames.append(fr.assign(arm=arm, threshold=BASE_THRESHOLD, in_sample=0)[FLAG_COLUMNS])
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=FLAG_COLUMNS)
+
+
+def check_null_thresholds(null: pd.DataFrame, thresholds_by_arm: dict) -> None:
+    """Raise AssertionError unless every (arm, spec, test) ``percentile_95`` of ``null`` equals
+    ``thresholds_by_arm[arm][(spec, test)]`` (guards the relabel-to-base step of ``empirical_null_by_arm``)."""
+    if null is None or null.empty:
+        return
+    for (arm, spec, test), g in null.groupby(["arm", "spec", "test"]):
+        want = (thresholds_by_arm.get(arm) or {}).get((spec, test))
+        got = float(g["percentile_95"].iloc[0])
+        if want is None or not math.isclose(got, float(want), rel_tol=1e-12, abs_tol=1e-15):
+            raise AssertionError(f"empirical null p95 {got!r} for ({arm}, {spec}, {test}) != the arm's own "
+                                 f"control threshold {want!r}")
 
 
 def empirical_null_by_arm(pair_eval: pd.DataFrame) -> pd.DataFrame:
@@ -239,8 +278,8 @@ def _bars(ax, flags, spec, test, offset, width, color, label) -> float:
         xs.append(_X[arm] + offset)
         ys.append(rate)
         l, h = (rate, rate) if _isnan(r["ci_low"]) else (float(r["ci_low"]), float(r["ci_high"]))
-        lo.append(rate - l)
-        hi.append(h - rate)
+        lo.append(max(rate - l, 0.0))
+        hi.append(max(h - rate, 0.0))
         top = max(top, h, rate)
     if xs:
         ax.bar(xs, ys, width=width, color=color, edgecolor=_SURFACE, linewidth=1.5, label=label, zorder=2)
@@ -370,7 +409,7 @@ def _signs_text(paired: pd.DataFrame, arm: str, test: str) -> str:
             f"(mean diff {_f(r['mean_diff'])}, Wilcoxon p {_p(r['wilcoxon_p'])})")
 
 
-def _arm_line(arm, *, inventory, flags, null, counts, paired) -> str:
+def _arm_line(arm, *, inventory, flags, null, counts, paired, at_base=None) -> str:
     inv = inventory[inventory["arm"] == arm] if len(inventory) else inventory
     mem, info = CELL.get(arm, ("?", "?"))
     head = f"**{arm}** (memory {mem}, information {info}"
@@ -385,8 +424,12 @@ def _arm_line(arm, *, inventory, flags, null, counts, paired) -> str:
         c = _rate_row(flags, arm, SUMMARY_SPEC, test, "closed")
         e = _rate_row(flags, arm, SUMMARY_SPEC, test, "empirical")
         thr = _p95(null, arm, SUMMARY_SPEC, test)
-        parts.append(f"{test} closed {_rate_cell(c)}, empirical {_rate_cell(e, ci=False)} "
-                     f"(own p95 {stat} = {_f(thr)})")
+        own = "n/a" if e is None else f"{_f(e['rate'])} by construction"
+        part = f"{test} closed {_rate_cell(c)}; empirical: own p95 {stat} = {_f(thr)} (in-sample, {own})"
+        if arm != "base":
+            b = _rate_row(at_base, arm, SUMMARY_SPEC, test, BASE_THRESHOLD)
+            part += f"; at base p95 (out-of-sample) {_rate_cell(b)}"
+        parts.append(part)
     line = f"{head}: tag_filtered " + "; ".join(parts) + f"; {_counts_text(counts, arm)}"
     if arm == "base":
         return line + "; reference arm for the seed-matched signs."
@@ -394,11 +437,11 @@ def _arm_line(arm, *, inventory, flags, null, counts, paired) -> str:
         _signs_text(paired, arm, "A1") + "."
 
 
-def _summary(*, inventory, flags, null, counts, floors, paired, dispersion, spend) -> list[str]:
-    lines = [_arm_line(a, inventory=inventory, flags=flags, null=null, counts=counts, paired=paired)
-             for a in ARMS]
+def _summary(*, inventory, flags, null, counts, floors, paired, dispersion, spend, at_base=None) -> list[str]:
+    kw = dict(inventory=inventory, flags=flags, null=null, counts=counts, paired=paired, at_base=at_base)
+    lines = [_arm_line(a, **kw) for a in ARMS]
     extra = [a for a in _arms_in(inventory["arm"]) if a not in ARMS] if len(inventory) else []
-    lines += [_arm_line(a, inventory=inventory, flags=flags, null=null, counts=counts, paired=paired) for a in extra]
+    lines += [_arm_line(a, **kw) for a in extra]
     if floors is not None and len(floors):
         fl = floors.set_index("rule")
         g = lambda rule, col: _f(fl.loc[rule, col]) if rule in fl.index else "n/a"  # noqa: E731
@@ -423,45 +466,52 @@ def _summary(*, inventory, flags, null, counts, floors, paired, dispersion, spen
     else:
         lines.append("Slope dispersion: not computed.")
     lines.append(f"Spend: ${_f(spend.get('total_usd'), 2)} actual over {int(spend.get('total_calls') or 0)} calls "
-                 f"across every launch; round 2 ${_f(spend.get('round2_usd'), 2)} "
+                 f"over all procurement runs (runs/ + calibration_runs/); round 2 ${_f(spend.get('round2_usd'), 2)} "
                  f"({int(spend.get('round2_calls') or 0)} calls).")
-    lines.append(f"{analysis.IN_SAMPLE_MARK} empirical rates use each arm's own 95th percentile, so they are about "
-                 "5% by construction (in-sample, not a false-positive rate); the closed-form rates are the test.")
+    lines.append("Empirical thresholds are each arm's own 95th percentile, so the own-threshold rate is about 5% by "
+                 "construction (in-sample, not a false-positive rate); the closed-form rates and the rates at the "
+                 "base arm's p95 (out-of-sample) are the comparisons.")
     return lines
 
 
-def _flag_section(flags: pd.DataFrame, spec: str) -> list[str]:
+def _flag_section(flags: pd.DataFrame, spec: str, at_base: pd.DataFrame | None = None) -> list[str]:
     fr = flags[flags["spec"] == spec] if len(flags) else flags
     if fr.empty:
         return [f"No complete control run for spec `{spec}`."]
+    if at_base is not None and len(at_base):
+        fr = pd.concat([fr, at_base[at_base["spec"] == spec]], ignore_index=True)
     rows = []
     for arm in _arms_in(fr["arm"]):
-        for th in analysis.THRESHOLDS:
+        for th in (*analysis.THRESHOLDS, BASE_THRESHOLD):
             cells = [_rate_row(fr, arm, spec, t, th) for t in analysis.TESTS]
             if all(c is None for c in cells):
                 continue
             n_runs = next(int(c["n_runs"]) for c in cells if c is not None)
-            rows.append([arm, th, *[_rate_cell(c) for c in cells], n_runs])
+            label = "at base p95 (out-of-sample)" if th == BASE_THRESHOLD else th
+            rows.append([arm, label, *[_rate_cell(c) for c in cells], n_runs])
     return _table(["arm", "threshold", "A1", "A3", "both", "runs"], rows)
 
 
 def write_readme_round2(path, *, inventory: pd.DataFrame, flags: pd.DataFrame, null: pd.DataFrame,
                         fpT: pd.DataFrame, regimes: pd.DataFrame, counts: pd.DataFrame, pair_type: pd.DataFrame,
                         dispersion: pd.DataFrame, floors: pd.DataFrame, paired: pd.DataFrame, figure,
-                        archives: list[dict], spend: dict, analysis_dir) -> str:
+                        archives: list[dict], spend: dict, analysis_dir, at_base: pd.DataFrame | None = None,
+                        now_utc: datetime | None = None) -> str:
     """Write ``results/README_round2.md`` to ``path`` and return its text: a ten-line summary (one line per
     arm with the tag_filtered A3/A1 rates closed and empirical, regime counts and seed-matched sign counts
     vs base; then floors, mean bid/EST, slope dispersion, spend, the in-sample note), every §2.5 table
-    as Markdown, the figure, the per-arm run inventory, the archives and the spend."""
+    as Markdown, the figure, the per-arm run inventory, the archives and the spend. ``at_base``
+    (``flag_rates_at_base_threshold``) adds the out-of-sample rows; the figure link is relative to ``path``."""
     path = Path(path)
     inventory = inventory if inventory is not None else pd.DataFrame(columns=INVENTORY_COLUMNS)
     L = ["# Round 2: memory × information ablation of the control runs", ""]
-    L.append(f"Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S} UTC by `python -m "
+    now_utc = now_utc or datetime.now(timezone.utc)
+    L.append(f"Generated {now_utc:%Y-%m-%d %H:%M:%S} UTC by `python -m "
              f"src.procurement.analysis_round2`; analysis files in `{Path(analysis_dir).as_posix()}`. Control runs "
              "only; 3 decimals; `n/a` = not computable. Rates are rate (rejected/pairs).")
     L.append("")
     summary = _summary(inventory=inventory, flags=flags, null=null, counts=counts, floors=floors, paired=paired,
-                       dispersion=dispersion, spend=spend)
+                       dispersion=dispersion, spend=spend, at_base=at_base)
     L += [f"{k}. {s}" for k, s in enumerate(summary, start=1)]
     L.append("")
 
@@ -482,10 +532,12 @@ def write_readme_round2(path, *, inventory: pd.DataFrame, flags: pd.DataFrame, n
           "Primary rows (usable_T = T − burn-in) of complete control runs; cells are rate (rejected/pairs) [95% "
           "interval clustered by run]. Closed: |z| > "
           f"{detector.A1_CRITICAL:.3f} (A1), F p-value < {detector.A3_ALPHA:.3f} (A3). Empirical: above the arm's "
-          f"own 95th percentile. Both: both tests reject under the same threshold type. {analysis.CI_NOTE}", ""]
+          "own 95th percentile (in-sample); \"at base p95 (out-of-sample)\": the arm's pairs against the base "
+          "arm's 95th percentile (`flag_rates_at_base_threshold.csv`). Both: both tests reject under the same "
+          f"threshold type. {analysis.CI_NOTE}", ""]
     for spec in detector.SPECS:
         L += [f"### Spec `{spec}`", ""]
-        L += _flag_section(flags, spec)
+        L += _flag_section(flags, spec, at_base)
         L.append("")
     L += [analysis.IN_SAMPLE_NOTE, ""]
 
@@ -590,7 +642,7 @@ def write_readme_round2(path, *, inventory: pd.DataFrame, flags: pd.DataFrame, n
 
     # ---- paired
     L += ["## Seed-matched comparison with base (`paired_by_seed.csv`)", "",
-          "Per seed: the arm's run-level rejection rate over its 15 pairs minus the base run's of the same seed "
+          "Per seed: the arm's run-level rejection rate over its pairs with the statistic minus the base run's of the same seed "
           "(tag_filtered, closed). Signs count seeds with a higher (+), lower (−) or equal (=) rate than base; "
           "two-sided Wilcoxon signed-rank p over the seeds (n/a when every difference is zero or fewer than 2 "
           "seeds have both runs).", ""]
@@ -632,7 +684,7 @@ def write_readme_round2(path, *, inventory: pd.DataFrame, flags: pd.DataFrame, n
           f"Every `calls.csv` under {spend.get('scope', 'the results root and calibration_runs/')}, priced at "
           f"config/defaults.json `pricing` (USD per million tokens), a call counted once by its attempt-1 row.", ""]
     L += _table(["scope", "USD", "calls", "run dirs"],
-                [["all launches", _f(spend.get("total_usd"), 2), int(spend.get("total_calls") or 0),
+                [["all procurement runs (runs/ + calibration_runs/)", _f(spend.get("total_usd"), 2), int(spend.get("total_calls") or 0),
                   int(spend.get("n_dirs") or 0)],
                  ["round 2 (arm ≠ base, incl. arm smokes)", _f(spend.get("round2_usd"), 2),
                   int(spend.get("round2_calls") or 0), int(spend.get("round2_dirs") or 0)]])
@@ -649,6 +701,7 @@ def write_readme_round2(path, *, inventory: pd.DataFrame, flags: pd.DataFrame, n
           "- Only control runs enter this report; the round-1 scheme runs (cover, markup, rotation) are in "
           "`results/README.md`.",
           f"- {ROUND1_LOSS_NOTE}",
+          f"- {SMOKE_SPEND_NOTE}",
           ""]
     text = "\n".join(L)
     path.write_text(text, encoding="utf-8", newline="\n")
@@ -682,7 +735,7 @@ def _meta_arm(d: Path) -> str | None:
 
 def spend_summary(results_root) -> dict:
     """``launcher.spend_totals`` over every run dir under ``results_root`` and its sibling
-    ``calibration_runs/`` (all launches), and over the subset whose run_meta arm is not base (round 2)."""
+    ``calibration_runs/`` (all procurement runs), and over the subset whose run_meta arm is not base (round 2)."""
     pricing = config.Pricing(**config.load_defaults()["pricing"])
     dirs = launcher.existing_run_dirs(results_root)
     usd, calls = launcher.spend_totals(dirs, pricing)
@@ -723,6 +776,8 @@ def analyze_round2(results_root, out_dir, *, archives: list[dict] | None = None,
     thresholds = analysis.control_thresholds_by_arm(pair_eval)
     flags = flag_rates_by_arm(pair_eval, thresholds)
     null = empirical_null_by_arm(pair_eval)
+    check_null_thresholds(null, thresholds)
+    at_base = flag_rates_at_base_threshold(pair_eval, thresholds)
     fpT = fp_vs_T_by_arm(pair_eval, run_eval)
     paired = paired_by_seed_table(pair_eval)
 
@@ -769,14 +824,15 @@ def analyze_round2(results_root, out_dir, *, archives: list[dict] | None = None,
     analysis._write(out_dir / "slope_dispersion_by_arm.csv", dispersion, rg.DISPERSION_COLUMNS)
     analysis._write(out_dir / "synthetic_floors.csv", floors, floors_mod.FLOOR_COLUMNS)
     analysis._write(out_dir / "paired_by_seed.csv", paired, PAIRED_COLUMNS)
+    analysis._write(out_dir / "flag_rates_at_base_threshold.csv", at_base, FLAG_COLUMNS)
 
-    readme = results_root.parent / README_NAME
-    text = write_readme_round2(readme, inventory=inventory, flags=flags, null=null, fpT=fpT, regimes=regimes,
-                               counts=counts, pair_type=pair_type, dispersion=dispersion, floors=floors,
-                               paired=paired, figure=figure, archives=list(archives or []),
-                               spend=spend if spend is not None else spend_summary(results_root),
-                               analysis_dir=out_dir)
-    (out_dir / "README.md").write_text(text, encoding="utf-8", newline="\n")
+    kw = dict(inventory=inventory, flags=flags, null=null, fpT=fpT, regimes=regimes, counts=counts,
+              pair_type=pair_type, dispersion=dispersion, floors=floors, paired=paired, figure=figure,
+              archives=list(archives or []), spend=spend if spend is not None else spend_summary(results_root),
+              analysis_dir=out_dir, at_base=at_base, now_utc=datetime.now(timezone.utc))
+    # same text twice; only the figure link differs (relative to each file's own directory)
+    write_readme_round2(results_root.parent / README_NAME, **kw)
+    write_readme_round2(out_dir / "README.md", **kw)
     return out_dir
 
 

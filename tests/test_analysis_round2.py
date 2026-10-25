@@ -12,7 +12,8 @@ SEEDS = (1, 2)
 TEST_ARMS = ("base", "mem0")
 OUT_FILES = ("flag_rates_by_arm.csv", "empirical_null_by_arm.csv", "fp_vs_T_by_arm.csv", "regimes_by_arm.csv",
              "regime_counts_by_arm.csv", "a3_by_pair_type_by_arm.csv", "slope_dispersion_by_arm.csv",
-             "synthetic_floors.csv", "paired_by_seed.csv", "ablation_2x2.png", "README.md")
+             "synthetic_floors.csv", "paired_by_seed.csv", "flag_rates_at_base_threshold.csv", "ablation_2x2.png",
+             "README.md")
 
 
 @pytest.fixture(scope="module")
@@ -41,7 +42,9 @@ def test_analyze_round2_writes_every_file(built):
     assert (out / "ablation_2x2.png").stat().st_size > 0
     readme = built["root"].parent / "README_round2.md"
     assert readme.is_file()
-    assert readme.read_text(encoding="utf-8") == (out / "README.md").read_text(encoding="utf-8")
+    a, b = readme.read_text(encoding="utf-8"), (out / "README.md").read_text(encoding="utf-8")
+    assert "](analysis/a1/ablation_2x2.png)" in a and "](ablation_2x2.png)" in b
+    assert a.replace("](analysis/a1/ablation_2x2.png)", "](ablation_2x2.png)") == b  # only the link differs
 
 
 def test_flag_rates_by_arm_structure(built):
@@ -101,6 +104,13 @@ def test_readme_round2(built):
     for rid in ("control_s1", "control_s2", "control_mem0_s1", "control_mem0_s2"):
         assert rid in text
     assert "in-sample" in text
+    assert "at base p95 (out-of-sample)" in text
+    assert "all procurement runs (runs/ + calibration_runs/)" in text and "across every launch" not in text
+    assert "20261024_214000_smoke_test" in text
+    assert "15 pairs" not in text
+    at_base = pd.read_csv(built["out"] / "flag_rates_at_base_threshold.csv")
+    assert set(at_base["arm"]) == {"mem0"} and set(at_base["threshold"]) == {"base_empirical"}
+    assert (at_base["in_sample"] == 0).all()
 
 
 def test_refuses_non_empty_out_dir(built, tmp_path):
@@ -153,3 +163,52 @@ def test_paired_by_seed_signs():
     table = ar2.paired_by_seed_table(pe)
     assert list(table.columns) == ar2.PAIRED_COLUMNS
     assert sorted(zip(table["arm"], table["test"])) == [("stateless", "A1"), ("stateless", "A3")]
+
+
+# ------------------------------------------------------------------ out-of-sample rates and the null guard
+
+def _shifted_pair_eval(shift: float) -> pd.DataFrame:
+    """base and hidden arms, 10 seeds x 15 tag_filtered pairs; hidden's F = base's F + shift, same z."""
+    rng = np.random.default_rng(11)
+    F = rng.permutation(np.linspace(0.1, 3.0, 150))
+    z = rng.permutation(np.linspace(-2.5, 2.5, 150))
+    rows = []
+    for arm, add in (("base", 0.0), ("hidden", shift)):
+        for k in range(150):
+            seed = k // 15 + 1
+            rows.append(dict(run_id=f"control_s{seed}" if arm == "base" else f"control_hidden_s{seed}", arm=arm,
+                             seed=seed, condition="control", spec="tag_filtered", primary=1, complete=1,
+                             usable_T=100, pair_class="outsider", firm_i=f"F{k}", firm_j=f"G{k}", z=z[k],
+                             F=F[k] + add, a1_flag=int(abs(z[k]) > 1.96), a3_flag=0))
+    return pd.DataFrame(rows), F, z
+
+
+def test_rates_at_base_threshold_shifted_arm():
+    from src.procurement import analysis
+    pe, F, z = _shifted_pair_eval(1.0)
+    thr = analysis.control_thresholds_by_arm(pe)
+    flags = ar2.flag_rates_by_arm(pe, thr)
+    own = flags[(flags["threshold"] == "empirical") & (flags["spec"] == "tag_filtered")].set_index(["arm", "test"])
+    for arm in ("base", "hidden"):  # own threshold: ~5% by construction
+        for test in ("A1", "A3"):
+            assert own.loc[(arm, test), "rate"] == pytest.approx(0.05, abs=0.01)
+    at = ar2.flag_rates_at_base_threshold(pe, thr)
+    assert set(at["arm"]) == {"hidden"} and (at["in_sample"] == 0).all()
+    at = at.set_index("test")
+    p95_F, p95_z = np.percentile(F, 95), np.percentile(np.abs(z), 95)
+    assert at.loc["A3", "rate"] == pytest.approx(float(((F + 1.0) > p95_F).mean()))
+    assert at.loc["A3", "rate"] > 0.3  # shifted arm: far above 5% against base's threshold
+    assert at.loc["A1", "rate"] == pytest.approx(float((np.abs(z) > p95_z).mean()))  # z unshifted
+    assert at.loc["A1", "rate"] == pytest.approx(own.loc[("base", "A1"), "rate"])
+
+
+def test_null_threshold_guard():
+    from src.procurement import analysis
+    pe, _, _ = _shifted_pair_eval(1.0)
+    thr = analysis.control_thresholds_by_arm(pe)
+    null = ar2.empirical_null_by_arm(pe)
+    ar2.check_null_thresholds(null, thr)  # the relabel-to-base step uses each arm's own p95
+    bad = null.copy()
+    bad.loc[bad["arm"] == "hidden", "percentile_95"] = thr["base"][("tag_filtered", "A3")]
+    with pytest.raises(AssertionError):
+        ar2.check_null_thresholds(bad, thr)
