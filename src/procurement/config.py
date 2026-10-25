@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 CONDITIONS = ("control", "cover", "markup", "rotation")
@@ -47,6 +47,42 @@ class RunConfig:
     scripted_margin: float = 0.10
     scripted_rule: str = "inflate"
     serious_add: float = 0.0
+
+    def to_dict(self) -> dict:
+        """Every field as plain JSON types; ``cost`` as a dict of ``CostParams`` fields."""
+        d = asdict(self)
+        d["cost"] = {k: list(v) if isinstance(v, tuple) else v for k, v in d["cost"].items()}
+        if d["cartel_seats"] is not None:
+            d["cartel_seats"] = list(d["cartel_seats"])
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "RunConfig":
+        """Inverse of ``to_dict``. Unknown keys raise ValueError; missing ones take their defaults."""
+        known = {f.name for f in fields(cls)}
+        unknown = set(data) - known
+        if unknown:
+            raise ValueError(f"unknown RunConfig keys: {sorted(unknown)}")
+        d = dict(data)
+        if "cost" in d and not isinstance(d["cost"], CostParams):
+            cost = dict(d["cost"])
+            unknown = set(cost) - {f.name for f in fields(CostParams)}
+            if unknown:
+                raise ValueError(f"unknown CostParams keys: {sorted(unknown)}")
+            for k in ("nu_levels", "tag_labels"):
+                if k in cost:
+                    cost[k] = tuple(cost[k])
+            d["cost"] = CostParams(**cost)
+        if d.get("cartel_seats") is not None:
+            d["cartel_seats"] = tuple(int(x) for x in d["cartel_seats"])
+        return cls(**d)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True)
+
+    @classmethod
+    def from_json(cls, text: str) -> "RunConfig":
+        return cls.from_dict(json.loads(text))
 
 
 def cartel_seats(seed: int, condition: str) -> tuple[int, int] | None:

@@ -1,11 +1,16 @@
 """The project loop: postings, (message phase), bids, award, logging, heartbeat/checkpoint, STOP, resume."""
 from __future__ import annotations
 
+import argparse
 import copy
 import csv
+import json
 import math
+import os
 import re
 import subprocess
+import sys
+import traceback
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from pathlib import Path
@@ -549,14 +554,17 @@ def _start_resume(cfg: RunConfig, env: Environment, old_dir: Path, old_meta: dic
 
 def run(cfg: RunConfig, bidder_factory: BidderFactory, results_root: str | Path | None = None,
         resume_dir: Path | None = None, purpose: str = "experiment", *,
-        limits: dict | None = None, frozen_from: str | None = None) -> Path:
+        limits: dict | None = None, frozen_from: str | None = None,
+        on_run_dir: Callable[[Path], None] | None = None) -> Path:
     """Run one market to a fresh run directory and return it. A ``STOP`` file raises SystemExit(3).
 
     ``resume_dir``: continue that run after its checkpoint in a NEW directory (under ``results_root``,
     default the old directory's parent) that starts with the old rows up to the checkpoint; the old
     directory is never modified. The resumed run keeps the old ``purpose`` and ``started_utc`` and
     records ``resumed_from``; ``purpose`` is ignored. Every check (config against the old run_meta,
-    checkpoint, bidder state hook) runs before any directory is created."""
+    checkpoint, bidder state hook) runs before any directory is created. ``on_run_dir(run_dir)`` is
+    called once the run directory holds its run_meta (and, on resume, its heartbeat and checkpoint),
+    before the first project."""
     if purpose not in io.RUN_PURPOSES:
         raise ValueError(f"purpose must be one of {io.RUN_PURPOSES}, got {purpose!r}")
     cp = old_meta = None
@@ -582,6 +590,8 @@ def run(cfg: RunConfig, bidder_factory: BidderFactory, results_root: str | Path 
         now = _utc_now()
         io.write_heartbeat(run_dir, loop.start, now, now)
         io.write_checkpoint(run_dir, loop.checkpoint_state(loop.start))  # the new dir is resumable at once
+    if on_run_dir is not None:
+        on_run_dir(run_dir)
     loop.run()
     meta["finished_utc"] = _utc_now().isoformat()
     io.write_run_meta(run_dir, meta)
@@ -597,3 +607,68 @@ def run_in_memory(cfg: RunConfig, bidder_factory: BidderFactory
     bids = pd.DataFrame(loop.bid_rows, columns=io.BIDS_COLUMNS)
     truth = pd.DataFrame(loop.truth_rows, columns=io.TRUTH_COLUMNS)
     return bids, truth, loop.messages
+
+
+# ---------------------------------------------------------------- CLI
+
+FATAL_EXIT_CODE = 4
+CRASH_EXIT_CODE = 1
+_KEY_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_2")
+
+
+def _scrub(text: str) -> str:
+    """``text`` with any API key value from the environment replaced by ***."""
+    for var in _KEY_VARS:
+        secret = os.environ.get(var)
+        if secret:
+            text = text.replace(secret, "***")
+    return text
+
+
+def load_cli_config(path) -> tuple[RunConfig, str | None, dict | None]:
+    """A launcher config file: every ``RunConfig`` field (``RunConfig.to_dict``) plus two optional
+    run-level keys passed to ``run``: ``frozen_from`` and ``limits``."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    frozen_from = data.pop("frozen_from", None)
+    limits = data.pop("limits", None)
+    return RunConfig.from_dict(data), frozen_from, limits
+
+
+def _announce(path: Path, run_dir: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    io._atomic_write_text(path, str(Path(run_dir).resolve()))
+
+
+def main(argv=None) -> int:
+    """``python -m src.procurement.runner --config CFG.json [--resume-dir DIR] --announce FILE
+    [--results-root ROOT] [--purpose experiment]``. Exit codes: 0 finished, 3 stopped by a STOP file,
+    4 ``FatalAPIError`` (one line: class and message, never the key), 1 any other exception."""
+    ap = argparse.ArgumentParser(prog="python -m src.procurement.runner",
+                                 description="Run one market (one process per run; see the launcher).")
+    ap.add_argument("--config", required=True, help="RunConfig JSON (RunConfig.to_dict + frozen_from, limits)")
+    ap.add_argument("--resume-dir", default=None, help="continue this run after its checkpoint, in a new dir")
+    ap.add_argument("--announce", required=True, help="file that receives the run directory's absolute path")
+    ap.add_argument("--results-root", default=None, help="parent of the run dir (default: config results_root)")
+    ap.add_argument("--purpose", default="experiment", choices=io.RUN_PURPOSES)
+    args = ap.parse_args(argv)
+    try:
+        cfg, frozen_from, limits = load_cli_config(args.config)
+        run(cfg, bidder_factory_for(cfg), results_root=args.results_root,
+            resume_dir=None if args.resume_dir is None else Path(args.resume_dir), purpose=args.purpose,
+            limits=limits, frozen_from=frozen_from,
+            on_run_dir=lambda run_dir: _announce(Path(args.announce), run_dir))
+    except SystemExit as exc:
+        if exc.code == STOP_EXIT_CODE:
+            return STOP_EXIT_CODE
+        raise
+    except FatalAPIError as exc:
+        print(_scrub(f"{type(exc).__name__}: {exc}"), file=sys.stderr, flush=True)
+        return FATAL_EXIT_CODE
+    except Exception:
+        print(_scrub(traceback.format_exc()), file=sys.stderr, flush=True)
+        return CRASH_EXIT_CODE
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

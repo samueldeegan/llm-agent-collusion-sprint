@@ -1,0 +1,716 @@
+"""Launcher, spend guard, time ladder and runner CLI. No test spawns an API process or calls the API:
+processes are fakes driven by a fake clock, and every file lives under ``tmp_path``."""
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from src.procurement import io, launcher, runner
+from src.procurement.client import FatalAPIError
+from src.procurement.config import CostParams, Pricing, RunConfig, run_plan
+from src.procurement.synthetic import SyntheticBidder
+
+T0 = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
+FULL_R = {"control": 12, "cover": 12, "markup": 4, "rotation": 4}
+SECRET = "sk-ant-test-SECRET-do-not-print-7c1e"
+
+
+class FakeClock:
+    def __init__(self, start: datetime = T0):
+        self.now = start
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += timedelta(seconds=max(0.0, float(seconds)))
+
+    def elapsed(self) -> float:
+        return (self.now - T0).total_seconds()
+
+
+def _arg(cmd: list[str], flag: str) -> str | None:
+    return cmd[cmd.index(flag) + 1] if flag in cmd else None
+
+
+class FakeProc:
+    """A stand-in for a runner process. ``exit_at``: seconds after start when it exits with ``code``
+    (None: never). ``stall``: never touches heartbeat activity. ``honour_stop``: exits 3 once its run
+    dir holds a STOP file. A live, non-stalled fake touches activity whenever it is polled."""
+
+    def __init__(self, clock, run_dir: Path, exit_at=None, code=0, stall=False, honour_stop=True):
+        self.clock, self.run_dir = clock, run_dir
+        self.start = clock()
+        self.exit_at, self.code, self.stall, self.honour_stop = exit_at, code, stall, honour_stop
+        self.returncode = None
+        self.killed = False
+        self.pid = 1000 + id(self) % 1000
+
+    def poll(self):
+        if self.returncode is not None:
+            return self.returncode
+        if self.honour_stop and (self.run_dir / "STOP").exists():
+            self.returncode = 3
+        elif self.exit_at is not None and (self.clock() - self.start).total_seconds() >= self.exit_at:
+            if self.code == 0:
+                meta = io.read_run_meta(self.run_dir)
+                meta["finished_utc"] = self.clock().isoformat()
+                io.write_run_meta(self.run_dir, meta)
+            self.returncode = self.code
+        elif not self.stall:
+            io.touch_activity(self.run_dir, self.clock())
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+        if self.returncode is None:
+            self.returncode = 1
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+
+class FakePopen:
+    """``popen(cmd, **kw)``: creates the run dir the real runner would, announces it, and returns a
+    FakeProc whose behaviour ``behave(name, attempt)`` decides (a dict of FakeProc kwargs plus
+    ``checkpoint``: write a checkpoint)."""
+
+    def __init__(self, clock, behave=None):
+        self.clock = clock
+        self.behave = behave or (lambda name, attempt: {"exit_at": 30, "code": 0})
+        self.calls: list[tuple[str, int, list[str], dict]] = []
+        self.procs: list[FakeProc] = []
+        self.attempts: dict[str, int] = {}
+
+    def __call__(self, cmd, **kw):
+        cfg = RunConfig.from_dict({k: v for k, v in json.loads(Path(_arg(cmd, "--config")).read_text(
+            encoding="utf-8")).items() if k not in ("frozen_from", "limits")})
+        name = Path(_arg(cmd, "--config")).stem
+        attempt = self.attempts.get(name, 0)
+        self.attempts[name] = attempt + 1
+        spec = dict(self.behave(name, attempt))
+        checkpoint = spec.pop("checkpoint", False)
+        run_dir = io.new_run_dir(_arg(cmd, "--results-root"), cfg.condition, cfg.seed, self.clock())
+        meta = {"purpose": "experiment", "condition": cfg.condition, "seed": cfg.seed, "finished_utc": None}
+        if _arg(cmd, "--resume-dir"):
+            meta["resumed_from"] = Path(_arg(cmd, "--resume-dir")).name
+        io.write_run_meta(run_dir, meta)
+        io.write_heartbeat(run_dir, 0, None, self.clock())
+        if checkpoint:
+            io.write_checkpoint(run_dir, {"last_completed_project": 3})
+        Path(_arg(cmd, "--announce")).write_text(str(run_dir.resolve()), encoding="utf-8")
+        proc = FakeProc(self.clock, run_dir, **spec)
+        self.calls.append((name, attempt, list(cmd), kw))
+        self.procs.append(proc)
+        return proc
+
+
+def _plan(R=None, T=110, **kw):
+    return run_plan(R or FULL_R, T=T, **kw)
+
+
+def _launcher(tmp_path, plan, popen, clock, caps=None, keys=1, **kw):
+    results_root = tmp_path / "results" / "runs"
+    manifest = launcher.build_manifest(plan, keys)
+    workspace = launcher.new_launch_dir(results_root.parent / "launches", clock())
+    manifest = launcher.write_workspace(workspace, manifest)
+    return launcher.Launcher(manifest, workspace, results_root, caps=caps or {1: len(plan)},
+                             pricing=Pricing(), planned_calls=launcher.planned_calls(plan), clock=clock,
+                             sleep=clock.sleep, popen=popen, **kw)
+
+
+def _write_calls(run_dir: Path, rows: list[dict]) -> None:
+    full = [{c: r.get(c) for c in io.CALLS_COLUMNS} for r in rows]
+    io.write_csv(run_dir / "calls.csv", full, io.CALLS_COLUMNS)
+
+
+def _call(pid=1, firm="A", attempt=1, inp=0, out=0, cc=0, cr=0):
+    return {"run_id": "control_s1", "project_id": pid, "firm_id": firm, "phase": "bid", "attempt": attempt,
+            "input_tokens": inp, "output_tokens": out, "cache_creation_input_tokens": cc,
+            "cache_read_input_tokens": cr}
+
+
+# ---------------------------------------------------------------- config and runner CLI
+
+def test_runconfig_json_roundtrip():
+    cfg = RunConfig(condition="cover", seed=3, T=80, bidder="llm", cartel_seats=(1, 4), api_key_slot=2,
+                    cost=CostParams(0.88, 0.07, 0.16, 0.05, nu_levels=(-0.1, 0.0, 0.1)))
+    back = RunConfig.from_json(cfg.to_json())
+    assert back == cfg
+    assert isinstance(back.cost.nu_levels, tuple) and isinstance(back.cartel_seats, tuple)
+    d = json.loads(cfg.to_json())
+    assert d["cost"]["beta0"] == 0.88 and set(d) == set(RunConfig.__dataclass_fields__)
+    assert RunConfig.from_json(RunConfig(condition="control", seed=1).to_json()) == RunConfig("control", 1)
+    with pytest.raises(ValueError, match="unknown RunConfig keys"):
+        RunConfig.from_dict({**d, "bogus": 1})
+
+
+def _cli_config(tmp_path, **kw) -> Path:
+    cfg = RunConfig(condition=kw.pop("condition", "control"), seed=1, T=12,
+                    results_root=str(tmp_path / "runs"), **kw)
+    path = tmp_path / "cfg.json"
+    data = {**cfg.to_dict(), "frozen_from": "config/frozen.json",
+            "limits": {"requests": 1000, "input_tokens": 2000000, "output_tokens": 400000}}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+class _StopAt:
+    def __init__(self, cfg, env, announce: Path, pid: int):
+        self.inner, self.announce, self.pid = SyntheticBidder(cfg.seed, cfg.cost, cfg.T, cfg.N), announce, pid
+
+    def bid(self, ctx):
+        if ctx.t + 1 == self.pid and ctx.seat == 0:
+            (Path(self.announce.read_text(encoding="utf-8")) / "STOP").touch()
+        return self.inner.bid(ctx)
+
+    def message(self, ctx):
+        return self.inner.message(ctx)
+
+
+def test_runner_cli_exit_codes(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", SECRET)
+    cfg_path, root = _cli_config(tmp_path), tmp_path / "runs"
+    ann = tmp_path / "ann.txt"
+    assert runner.main(["--config", str(cfg_path), "--announce", str(ann), "--results-root", str(root)]) == 0
+    run_dir = Path(ann.read_text(encoding="utf-8"))
+    assert run_dir.is_absolute() and run_dir.parent == root.resolve() and not ann.with_suffix(".txt.tmp").exists()
+    meta = io.read_run_meta(run_dir)
+    assert meta["finished_utc"] is not None and meta["frozen_from"] == "config/frozen.json"
+    assert meta["limits"]["requests"] == 1000 and meta["purpose"] == "experiment"
+    assert len(pd.read_csv(run_dir / "bids.csv")) == 72
+
+    # STOP -> 3, then resume from the stopped dir -> 0 in a new, announced dir
+    ann2 = tmp_path / "ann2.txt"
+    monkeypatch.setattr(runner, "bidder_factory_for", lambda cfg: (lambda c, e: _StopAt(c, e, ann2, 5)))
+    assert runner.main(["--config", str(cfg_path), "--announce", str(ann2), "--results-root", str(root)]) == 3
+    stopped = Path(ann2.read_text(encoding="utf-8"))
+    assert io.read_run_meta(stopped)["finished_utc"] is None
+    monkeypatch.undo()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", SECRET)
+    ann3 = tmp_path / "ann3.txt"
+    assert runner.main(["--config", str(cfg_path), "--announce", str(ann3), "--results-root", str(root),
+                        "--resume-dir", str(stopped)]) == 0
+    resumed = Path(ann3.read_text(encoding="utf-8"))
+    assert resumed != stopped and io.read_run_meta(resumed)["resumed_from"] == stopped.name
+    assert len(pd.read_csv(resumed / "bids.csv")) == 72
+
+    # FatalAPIError -> 4 with one line naming class and status
+    def fatal_factory(cfg):
+        def make(c, e):
+            raise FatalAPIError("API authentication failed (status 401); check the API key")
+        return make
+    monkeypatch.setattr(runner, "bidder_factory_for", fatal_factory)
+    capsys.readouterr()
+    assert runner.main(["--config", str(cfg_path), "--announce", str(tmp_path / "a4.txt"),
+                        "--results-root", str(root)]) == 4
+    out = capsys.readouterr()
+    lines = [ln for ln in out.err.splitlines() if ln.strip()]
+    assert len(lines) == 1 and "FatalAPIError" in lines[0] and "401" in lines[0]
+    assert SECRET not in out.out + out.err
+
+    # any other exception -> 1 with the traceback
+    def crash_factory(cfg):
+        def make(c, e):
+            raise RuntimeError("boom")
+        return make
+    monkeypatch.setattr(runner, "bidder_factory_for", crash_factory)
+    assert runner.main(["--config", str(cfg_path), "--announce", str(tmp_path / "a5.txt"),
+                        "--results-root", str(root)]) == 1
+    err = capsys.readouterr().err
+    assert "Traceback" in err and "RuntimeError: boom" in err and SECRET not in err
+
+
+# ---------------------------------------------------------------- manifest, sizing, caps
+
+def test_launcher_manifest_and_order():
+    plan = _plan()
+    m = launcher.build_manifest(plan, keys=1)
+    assert len(m) == 32 and [e["launch_index"] for e in m] == list(range(32))
+    order = [(e["condition"], e["seed"]) for e in m]
+    expected = ([("cover", s) for s in range(1, 13)] + [("markup", s) for s in range(1, 5)]
+                + [("rotation", s) for s in range(1, 5)] + [("control", s) for s in range(1, 13)])
+    assert order == expected
+    assert [e["stagger_s"] for e in m] == [5 * i for i in range(32)]
+    assert {e["api_key_slot"] for e in m} == {1}
+    m2 = launcher.build_manifest(plan, keys=2)
+    assert [e["api_key_slot"] for e in m2] == [2 if i % 2 == 1 else 1 for i in range(32)]
+    assert all(e["config"]["api_key_slot"] == e["api_key_slot"] for e in m2)
+    assert m2[0]["name"] == "00_cover_s1" and m2[31]["name"] == "31_control_s12"
+
+
+def test_sizing_rule_applied():
+    assert launcher.apply_sizing({"output_tokens": 1_200_000}, False) == {"R": FULL_R, "keys": 1}
+    assert launcher.apply_sizing({"output_tokens": 1_200_000}, True) == {"R": FULL_R, "keys": 1}
+    assert launcher.apply_sizing({"output_tokens": 400_000}, True) == {"R": FULL_R, "keys": 2}
+    assert launcher.apply_sizing({"output_tokens": 400_000}, False) == {
+        "R": {"control": 8, "cover": 8, "markup": 4, "rotation": 4}, "keys": 1}
+
+
+def _plan_file(tmp_path, deadline="2026-10-27T11:59:00Z", R=None, T=110, include_rotation=True) -> Path:
+    p = tmp_path / "run_plan.json"
+    p.write_text(json.dumps({"R": R or FULL_R, "include_rotation": include_rotation, "T": T,
+                             "deadline_utc": deadline}), encoding="utf-8")
+    return p
+
+
+def _no_popen(*a, **k):
+    raise AssertionError("a process was spawned")
+
+
+def test_sizing_rule_from_calibration_dry_run(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("ANTHROPIC_API_KEY_2", raising=False)
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    results = tmp_path / "results"
+    results.mkdir()
+    (results / "calibration.json").write_text(json.dumps({
+        "limits": {"1": {"requests": 1000, "input_tokens": 2_000_000, "output_tokens": 400_000}},
+        "measured": {"mean_latency_s": 10.0}}), encoding="utf-8")
+    rc = launcher.main(["--plan", str(_plan_file(tmp_path)), "--dry-run", "--allow-unfrozen",
+                        "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")],
+                       clock=FakeClock())
+    assert rc == 0
+    out = capsys.readouterr().out
+    (ws,) = (results / "launches").iterdir()
+    status = json.loads((ws / "status.json").read_text(encoding="utf-8"))
+    assert status["R"] == {"control": 8, "cover": 8, "markup": 4, "rotation": 4}
+    assert len(status["runs"]) == 24 and status["cap"] == 22 and status["keys"] == 1
+    assert "24 runs" in out and "cap 22" in out
+    assert "R = 8/8/4/4" in (ws / "launcher.log").read_text(encoding="utf-8")
+
+
+def test_concurrency_cap(tmp_path):
+    assert launcher.max_procs(1000, plan_size=32) == 22
+    assert launcher.max_procs(4000, plan_size=32) == 32
+    assert launcher.max_procs(10, plan_size=32) == 1
+    assert launcher.max_procs(1000, 20.0, 6, plan_size=100) == 44
+    m2 = launcher.build_manifest(_plan(), keys=2)
+    lim = {1: {"requests": 1000}, 2: {"requests": 1000}}
+    assert launcher.slot_caps(lim, m2, 10.0) == {1: 16, 2: 16}
+    assert launcher.slot_caps({1: {"requests": 1000}}, launcher.build_manifest(_plan(), 1), 10.0) == {1: 22}
+
+    # a fake spawn: cap 2, five runs finishing at different times
+    clock = FakeClock()
+    plan = _plan({"control": 2, "cover": 3})
+    durations = {"00_cover_s1": 200, "01_cover_s2": 50, "02_cover_s3": 300, "03_control_s1": 30,
+                 "04_control_s2": 30}
+    alive_at_start = []
+
+    class Recording(FakePopen):
+        def __call__(self, cmd, **kw):
+            alive_at_start.append(sum(1 for p in self.procs if p.returncode is None))
+            return super().__call__(cmd, **kw)
+
+    popen = Recording(clock, lambda name, a: {"exit_at": durations[name], "code": 0})
+    lau = _launcher(tmp_path, plan, popen, clock, caps={1: 2}, poll_s=10)
+    assert lau.monitor() == 0
+    assert [c[0] for c in popen.calls] == list(durations)  # manifest order
+    assert max(alive_at_start) <= 1  # at most one other alive when a start makes it two
+    assert all(r.state == "done" for r in lau.runs)
+
+
+# ---------------------------------------------------------------- spend guard and stop
+
+def test_spend_guard(tmp_path):
+    p = Pricing()
+    d1, d2 = tmp_path / "r1", tmp_path / "r2"
+    d1.mkdir(), d2.mkdir()
+    # $80 from all four token columns: 100M in ($10) + 100M out ($50) + 80M cache write ($10) + 1000M read ($10)
+    _write_calls(d1, [_call(1, "A", inp=100_000_000, out=100_000_000),
+                      _call(1, "B", cc=80_000_000, cr=1_000_000_000)])
+    actual, projected, stop = launcher.spend_guard([d1], p, planned_calls=1000)
+    assert actual == pytest.approx(80.0) and stop  # actual > 75 stops even below the 200-call floor
+    assert projected == pytest.approx(80.0 * 1000 / 2)
+
+    # $30 over 300 calls (retry rows are not extra calls); planned 600 -> projected 60: continue
+    rows = [_call(pid, f"F{k}", out=200_000) for pid in range(1, 51) for k in range(6)]  # 300 calls, $30
+    rows.append(_call(1, "F0", attempt=2))
+    _write_calls(d2, rows)
+    actual, projected, stop = launcher.spend_guard([d2], p, planned_calls=600)
+    assert actual == pytest.approx(30.0) and projected == pytest.approx(60.0) and not stop
+    # same spend, planned 1000 -> projected 100 > 75 with >= 200 calls: stop
+    actual, projected, stop = launcher.spend_guard([d2], p, planned_calls=1000)
+    assert projected == pytest.approx(100.0) and stop
+    # below the 200-call floor a projection alone does not stop
+    d3 = tmp_path / "r3"
+    d3.mkdir()
+    _write_calls(d3, [_call(1, "A", out=20_000_000)])  # $10 on one call, projected $10,000
+    assert launcher.spend_guard([d3], p, planned_calls=1000)[2] is False
+    # completed runs count, missing calls.csv is zero, empty token fields are zero
+    d4 = tmp_path / "r4"
+    d4.mkdir()
+    _write_calls(d4, [{**_call(2, "A"), "input_tokens": None, "output_tokens": None}])
+    assert launcher.spend_guard([d2, d4, tmp_path / "nope"], p, 600)[0] == pytest.approx(30.0)
+
+
+def test_spend_guard_resumed_dir_not_double_counted(tmp_path):
+    p = Pricing()
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir(), new.mkdir()
+    io.write_checkpoint(old, {"last_completed_project": 2})
+    io.write_run_meta(old, {"purpose": "experiment"})
+    io.write_run_meta(new, {"purpose": "experiment", "resumed_from": "old"})
+    first = [_call(1, "A", out=2_000_000), _call(2, "A", out=2_000_000)]  # $1 each
+    _write_calls(old, first + [_call(3, "A", out=2_000_000)])  # aborted project 3: real spend
+    _write_calls(new, first + [_call(3, "A", out=2_000_000), _call(4, "A", out=2_000_000)])
+    actual, projected, _ = launcher.spend_guard([old, new], p, planned_calls=5)
+    assert actual == pytest.approx(5.0)  # 1, 2, 3 (old) + 3, 4 (new); copied 1, 2 not twice
+    assert projected == pytest.approx(5.0)
+
+
+def test_stop_file_on_condition_2(tmp_path):
+    clock = FakeClock()
+    root = tmp_path / "results" / "runs"
+    dirs = [io.new_run_dir(root, "cover", s, T0) for s in (1, 2, 3)]
+    for d in dirs:
+        io.write_run_meta(d, {"purpose": "experiment", "finished_utc": None})
+    meta = io.read_run_meta(dirs[2])
+    meta["finished_utc"] = T0.isoformat()
+    io.write_run_meta(dirs[2], meta)
+    honours = FakeProc(clock, dirs[0], exit_at=None)
+    straggler = FakeProc(clock, dirs[1], exit_at=None, honour_stop=False)
+    finished = FakeProc(clock, dirs[2], exit_at=0, code=0)
+    finished.poll()
+    rc = launcher.stop_all([honours, straggler, finished], dirs, root, reason="spend", actual=80.0,
+                           projected=90.0, clock=clock, sleep=clock.sleep)
+    assert rc == 2
+    assert (dirs[0] / "STOP").exists() and (dirs[1] / "STOP").exists() and not (dirs[2] / "STOP").exists()
+    assert (dirs[0] / "STOP").read_bytes() == b""
+    assert honours.returncode == 3 and not honours.killed
+    assert straggler.killed and clock.elapsed() >= 120
+    stop = json.loads((tmp_path / "results" / "STOP.json").read_text(encoding="utf-8"))
+    assert set(stop) == {"reason", "actual_usd", "projected_usd", "utc", "runs_complete", "runs_incomplete"}
+    assert stop["reason"] == "spend" and stop["actual_usd"] == 80.0 and stop["projected_usd"] == 90.0
+    assert stop["runs_complete"] == [dirs[2].name]
+    assert sorted(stop["runs_incomplete"]) == sorted([dirs[0].name, dirs[1].name])
+    assert not (tmp_path / "results" / "STOP.json.tmp").exists()
+
+
+def test_monitor_spend_stop_exit_2(tmp_path):
+    clock = FakeClock()
+    popen = FakePopen(clock, lambda name, a: {"exit_at": None})
+    lau = _launcher(tmp_path, _plan({"control": 2}, T=10), popen, clock, poll_s=60, stagger_s=0)
+    real_poll = FakeProc.poll
+
+    def spending_poll(self):
+        rc = real_poll(self)
+        if rc is None and (self.clock() - T0).total_seconds() >= 120:
+            _write_calls(self.run_dir, [_call(1, "A", out=200_000_000)])  # $100
+        return rc
+
+    FakeProc.poll = spending_poll
+    try:
+        assert lau.monitor() == 2
+    finally:
+        FakeProc.poll = real_poll
+    stop = json.loads((tmp_path / "results" / "STOP.json").read_text(encoding="utf-8"))
+    assert stop["reason"] == "spend" and stop["actual_usd"] >= 100
+    assert all((p.run_dir / "STOP").exists() for p in popen.procs)
+    assert {r.state for r in lau.runs} == {"stopped"}
+
+
+# ---------------------------------------------------------------- restarts
+
+def test_stall_restart_once(tmp_path):
+    clock = FakeClock()
+    behave = lambda name, a: ({"stall": True, "checkpoint": True} if name.endswith("cover_s1")  # noqa: E731
+                              else {"exit_at": 1500, "code": 0})
+    popen = FakePopen(clock, behave)
+    lau = _launcher(tmp_path, _plan({"control": 1, "cover": 1}), popen, clock, poll_s=60, stall_s=600)
+    assert lau.monitor() == 6
+    stalled, healthy = lau.runs
+    assert [c[0] for c in popen.calls] == ["00_cover_s1", "01_control_s1", "00_cover_s1"]
+    first, second = popen.procs[0], popen.procs[2]
+    assert first.killed and second.killed
+    restart_cmd = popen.calls[2][2]
+    assert _arg(restart_cmd, "--resume-dir") == str(first.run_dir.resolve())
+    assert stalled.state == "stopped" and stalled.restarts == 1
+    assert (second.run_dir / "STOP").exists()  # analysis reports it as stopped
+    assert len(stalled.run_dirs) == 2 and stalled.run_dir == second.run_dir.resolve()
+    assert healthy.state == "done" and healthy.restarts == 0 and not popen.procs[1].killed
+    # first kill only after more than 600 s without activity
+    log = (lau.workspace / "launcher.log").read_text(encoding="utf-8")
+    assert "stall" in log and "restart" in log
+    status = json.loads((lau.workspace / "status.json").read_text(encoding="utf-8"))
+    assert status["runs"][0]["state"] == "stopped" and status["runs"][0]["restarts"] == 1
+
+
+def test_stall_measured_from_activity(tmp_path):
+    clock = FakeClock()
+    popen = FakePopen(clock, lambda name, a: {"stall": True})
+    lau = _launcher(tmp_path, _plan({"control": 1}), popen, clock, poll_s=60, stall_s=600)
+    lau.start_due()
+    for _ in range(10):  # 600 s: not older than stall_s yet
+        clock.sleep(60)
+        lau.poll_once()
+    assert not popen.procs[0].killed
+    clock.sleep(60)
+    lau.poll_once()
+    assert popen.procs[0].killed and lau.runs[0].restarts == 1
+
+
+def test_crash_restart_once_then_failed(tmp_path):
+    clock = FakeClock()
+
+    def behave(name, attempt):
+        if name == "00_cover_s1":  # crashes twice, with a checkpoint
+            return {"exit_at": 30, "code": 1, "checkpoint": True}
+        return {"exit_at": 30, "code": 1 if attempt == 0 else 0}  # crash without checkpoint, then done
+
+    popen = FakePopen(clock, behave)
+    lau = _launcher(tmp_path, _plan({"control": 1, "cover": 1}), popen, clock, poll_s=60)
+    assert lau.monitor() == 6
+    a, b = lau.runs
+    assert a.state == "failed" and a.restarts == 1 and a.exit_code == 1
+    assert b.state == "done" and b.restarts == 1 and b.exit_code == 0
+    cmds = {(n, att): cmd for n, att, cmd, _ in popen.calls}
+    assert _arg(cmds[("00_cover_s1", 1)], "--resume-dir") == str(popen.procs[0].run_dir.resolve())
+    assert "--resume-dir" not in cmds[("01_control_s1", 1)]  # no checkpoint: fresh
+    assert len(popen.calls) == 4
+    # every attempt has its own announce and log files
+    assert len({_arg(c[2], "--announce") for c in popen.calls}) == 4
+    assert len({c[3]["stdout"].name for c in popen.calls}) == 4
+
+
+def test_fatal_api_exit_stops_all(tmp_path):
+    clock = FakeClock()
+    behave = lambda name, a: ({"exit_at": 30, "code": 4} if name == "00_cover_s1"  # noqa: E731
+                              else {"exit_at": None})
+    popen = FakePopen(clock, behave)
+    lau = _launcher(tmp_path, _plan({"control": 2, "cover": 1}), popen, clock, poll_s=60, stagger_s=5)
+    assert lau.monitor() == 5
+    assert len(popen.calls) == 3
+    assert all((p.run_dir / "STOP").exists() for p in popen.procs[1:])
+    stop = json.loads((tmp_path / "results" / "STOP.json").read_text(encoding="utf-8"))
+    assert stop["reason"] == "fatal_api_error"
+    assert sorted(stop["runs_incomplete"]) == sorted(p.run_dir.name for p in popen.procs)
+    assert lau.runs[0].state == "failed" and lau.runs[0].exit_code == 4 and lau.runs[0].restarts == 0
+    assert {r.state for r in lau.runs[1:]} == {"stopped"}
+
+
+def test_spawn_command_and_kwargs(tmp_path):
+    clock = FakeClock()
+    popen = FakePopen(clock)
+    lau = _launcher(tmp_path, _plan({"control": 1}), popen, clock, python_exe="PY")
+    lau.start_due()
+    name, attempt, cmd, kw = popen.calls[0]
+    root = str((tmp_path / "results" / "runs").resolve())
+    assert cmd[:3] == ["PY", "-m", "src.procurement.runner"]
+    assert _arg(cmd, "--results-root") == root and Path(_arg(cmd, "--config")).is_file()
+    assert Path(kw["cwd"]) == Path(launcher.REPO_ROOT)
+    if os.name == "nt":
+        assert kw["creationflags"] & subprocess.CREATE_NEW_PROCESS_GROUP
+    assert kw["stdout"].name.endswith(".out") and kw["stderr"].name.endswith(".err")
+    assert not any("sk-" in part for part in cmd) and "env" not in kw
+
+
+# ---------------------------------------------------------------- status, ladder, planned calls
+
+def test_status_json_written(tmp_path):
+    clock = FakeClock()
+    popen = FakePopen(clock, lambda name, a: {"exit_at": 150, "code": 0})
+    lau = _launcher(tmp_path, _plan({"control": 1, "cover": 1}), popen, clock, poll_s=60,
+                    info={"R": {"control": 1, "cover": 1}, "cap": 2, "keys": 1})
+    snaps = []
+    real_sleep = clock.sleep
+
+    def sleep(s):
+        path = lau.workspace / "status.json"
+        if path.exists():
+            snaps.append(json.loads(path.read_text(encoding="utf-8")))
+        real_sleep(s)
+
+    lau.sleep = sleep
+    assert lau.monitor() == 0
+    final = json.loads((lau.workspace / "status.json").read_text(encoding="utf-8"))
+    assert final["R"] == {"control": 1, "cover": 1} and final["cap"] == 2 and final["keys"] == 1
+    assert {"actual_usd", "projected_usd", "planned_calls", "last_poll_utc", "exit_code"} <= set(final)
+    for r in final["runs"]:
+        assert r["state"] == "done" and r["restarts"] == 0 and r["exit_code"] == 0
+        assert Path(r["run_dir"]).is_dir() and r["last_poll_utc"] == final["last_poll_utc"]
+    assert any(any(r["state"] == "running" for r in s["runs"]) for s in snaps)
+    polls = {s["last_poll_utc"] for s in snaps}
+    assert len(polls) >= 2  # rewritten every poll
+    assert not (lau.workspace / "status.json.tmp").exists()
+
+
+def test_time_ladder():
+    D = datetime(2026, 10, 26, 11, 59, tzinfo=timezone.utc)
+    plan = {"R": dict(FULL_R), "include_rotation": True, "T": 110, "deadline_utc": "2026-10-26T11:59:00Z"}
+    snapshot = json.dumps(plan, sort_keys=True)
+    p, rung, stop = launcher.time_ladder(D - timedelta(hours=6), D, False, plan)
+    assert p == plan and rung == 0 and not stop
+    p, rung, stop = launcher.time_ladder(D - timedelta(hours=5), D, False, plan)
+    assert not p["include_rotation"] and p["T"] == 110 and p["R"]["markup"] == 4 and rung == 1 and not stop
+    p, rung, stop = launcher.time_ladder(D - timedelta(hours=4), D, False, plan)
+    assert not p["include_rotation"] and p["T"] == 80 and p["R"]["markup"] == 2 and p["R"]["control"] == 12
+    assert rung == 2 and not stop
+    p, rung, stop = launcher.time_ladder(D - timedelta(hours=3), D, False, plan)
+    assert p["R"] == {"control": 6, "cover": 6, "markup": 2, "rotation": 4} and p["T"] == 80
+    assert not p["include_rotation"] and rung == 3 and not stop
+    p, rung, stop = launcher.time_ladder(D - timedelta(hours=2.5), D, False, plan)
+    assert stop and rung == 4
+    p, rung, stop = launcher.time_ladder(D - timedelta(hours=1), D, True, plan)
+    assert p == plan and rung == 0 and not stop  # already launched: unchanged
+    assert json.dumps(plan, sort_keys=True) == snapshot  # pure
+    # a sized R below a rung value is never raised by the rung
+    small = {**plan, "R": {"control": 4, "cover": 4, "markup": 1, "rotation": 4}}
+    p, _, _ = launcher.time_ladder(D - timedelta(hours=3), D, False, small)
+    assert p["R"]["control"] == 4 and p["R"]["markup"] == 1
+    # planned calls follow the resulting plan
+    p, _, _ = launcher.time_ladder(D - timedelta(hours=3), D, False, plan)
+    runs = run_plan(p["R"], include_rotation=p["include_rotation"], T=p["T"])
+    assert launcher.planned_calls(runs) == 6 * 80 * 6 + 6 * 80 * 8 + 2 * 80 * 8
+
+
+def test_time_ladder_cli_logs_rungs(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    decisions = tmp_path / "D.md"
+    decisions.write_text("# Decisions\n", encoding="utf-8")
+    clock = FakeClock(datetime(2026, 10, 26, 7, 59, tzinfo=timezone.utc))  # deadline - 4 h
+    args = ["--plan", str(_plan_file(tmp_path, "2026-10-26T11:59:00Z")), "--allow-unfrozen",
+            "--bidder", "synthetic", "--results-root", str(tmp_path / "results" / "runs"),
+            "--decisions", str(decisions)]
+    # dry run: the plan shows the rungs but DECISIONS.md is untouched
+    assert launcher.main(args + ["--dry-run"], clock=clock) == 0
+    assert decisions.read_text(encoding="utf-8") == "# Decisions\n"
+    assert "T 80" in capsys.readouterr().out
+    popen = FakePopen(clock, lambda name, a: {"exit_at": 10, "code": 0})
+    assert launcher.main(args + ["--poll-s", "5"], clock=clock, sleep=clock.sleep, popen=popen) == 0
+    lines = [ln for ln in decisions.read_text(encoding="utf-8").splitlines() if "time ladder" in ln]
+    assert len(lines) == 2 and "rotation" in lines[0] and "T = 80" in lines[1]
+    assert {c[0].split("_", 1)[1] for c in popen.calls} == (
+        {f"cover_s{s}" for s in range(1, 13)} | {"markup_s1", "markup_s2"} | {f"control_s{s}" for s in range(1, 13)})
+    # deadline - 2.5 h with nothing launched: stop, no launch
+    clock2 = FakeClock(datetime(2026, 10, 26, 9, 29, tzinfo=timezone.utc))
+    popen2 = FakePopen(clock2)
+    assert launcher.main(args, clock=clock2, sleep=clock2.sleep, popen=popen2) == 7
+    assert popen2.calls == [] and "stop" in decisions.read_text(encoding="utf-8").splitlines()[-1]
+
+
+def test_planned_calls():
+    assert launcher.planned_calls(_plan()) == 7920 + 10560 + 3520 + 3520
+    assert launcher.planned_calls(_plan({"control": 8, "cover": 8, "markup": 4, "rotation": 4})) == (
+        8 * 110 * 6 + 8 * 110 * 8 + 4 * 110 * 8 * 2)
+    assert launcher.planned_calls(_plan({"control": 6, "cover": 6, "markup": 2}, T=80)) == 8000
+    assert launcher.planned_calls([]) == 0
+
+
+# ---------------------------------------------------------------- CLI: frozen, preflight, dry run
+
+def _frozen(tmp_path) -> Path:
+    p = tmp_path / "frozen.json"
+    p.write_text(json.dumps({"cost": {"beta0": 0.93, "beta1": 0.08, "beta2": 0.17, "sigma_eps": 0.05}}),
+                 encoding="utf-8")
+    return p
+
+
+def test_refuses_without_frozen(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", SECRET)
+    results = tmp_path / "results"
+    rc = launcher.main(["--plan", str(_plan_file(tmp_path)), "--results-root", str(results / "runs"),
+                        "--frozen", str(tmp_path / "missing_frozen.json"), "--decisions", str(tmp_path / "D.md")],
+                       clock=FakeClock(), popen=_no_popen)
+    assert rc == 5
+    err = capsys.readouterr().err
+    assert "frozen" in err and SECRET not in err
+    assert not (results / "launches").exists()
+
+
+def test_frozen_params_in_every_config(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    frozen = _frozen(tmp_path)
+    results = tmp_path / "results"
+    assert launcher.main(["--plan", str(_plan_file(tmp_path)), "--dry-run", "--frozen", str(frozen),
+                          "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")],
+                         clock=FakeClock()) == 0
+    (ws,) = (results / "launches").iterdir()
+    configs = sorted((ws / "configs").glob("*.json"))
+    assert len(configs) == 32
+    for path in configs:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data["cost"]["beta0"] == 0.93 and data["frozen_from"] == str(frozen)
+        assert data["bidder"] == "llm" and data["results_root"] == str((results / "runs").resolve())
+
+
+def test_preflight_missing_key_exit_5(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY_2", SECRET)
+    results = tmp_path / "results"
+    ladder_plan = _plan_file(tmp_path, "2026-10-25T16:00:00Z")  # 4 h left at T0: rungs 1-2 would apply
+    rc = launcher.main(["--plan", str(ladder_plan), "--frozen", str(_frozen(tmp_path)),
+                        "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")],
+                       clock=FakeClock(), popen=_no_popen)
+    assert rc == 5
+    out = capsys.readouterr()
+    assert "ANTHROPIC_API_KEY" in out.err and SECRET not in out.out + out.err
+    assert not (results / "launches").exists() and not (tmp_path / "D.md").exists()  # nothing written
+    # dry runs skip the check
+    assert launcher.main(["--plan", str(_plan_file(tmp_path)), "--frozen", str(_frozen(tmp_path)), "--dry-run",
+                          "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")],
+                         clock=FakeClock()) == 0
+    out = capsys.readouterr()
+    assert SECRET not in out.out + out.err
+    for f in (results / "launches").rglob("*"):
+        if f.is_file():
+            assert SECRET not in f.read_text(encoding="utf-8")
+
+
+def test_dry_run_writes_manifest_and_summary(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(subprocess, "Popen", _no_popen)
+    monkeypatch.delenv("ANTHROPIC_API_KEY_2", raising=False)
+    results = tmp_path / "results"
+    rc = launcher.main(["--plan", str(_plan_file(tmp_path)), "--dry-run", "--allow-unfrozen",
+                        "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")],
+                       clock=FakeClock())
+    assert rc == 0
+    out = capsys.readouterr()
+    (ws,) = (results / "launches").iterdir()
+    assert ws.name == "20261025_120000"
+    manifest = json.loads((ws / "manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest["runs"]) == 32 and manifest["runs"][0]["name"] == "00_cover_s1"
+    assert all(Path(e["config"]).is_file() for e in manifest["runs"])
+    status = json.loads((ws / "status.json").read_text(encoding="utf-8"))
+    assert {r["state"] for r in status["runs"]} == {"queued"} and status["cap"] == 32
+    assert "calibration" in out.err.lower()  # missing calibration warns
+    s = out.out
+    for needle in ("32 runs", "cover 12", "markup 4", "rotation 4", "control 12", "T 110", "cap 32",
+                   "keys 1", "planned calls 25520", "$28.07"):
+        assert needle in s, needle
+    assert not (results / "runs").exists()
+    # a second launch never overwrites the first workspace
+    assert launcher.main(["--plan", str(_plan_file(tmp_path)), "--dry-run", "--allow-unfrozen",
+                          "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")],
+                         clock=FakeClock()) == 0
+    assert len(list((results / "launches").iterdir())) == 2
+
+
+def test_run_plan_config_file(repo_root):
+    data = json.loads((repo_root / "config" / "run_plan.json").read_text(encoding="utf-8"))
+    assert data == {"R": FULL_R, "include_rotation": True, "T": 110, "deadline_utc": "2026-10-26T11:59:00Z"}
+
+
+@pytest.mark.slow
+def test_launcher_cli_subprocess_smoke(tmp_path, repo_root):
+    """Real processes, synthetic bidder, T = 12: the launcher spawns two runner processes and both finish."""
+    plan = _plan_file(tmp_path, R={"control": 1, "cover": 1}, T=12)
+    results = tmp_path / "results"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ANTHROPIC_API_KEY")}
+    proc = subprocess.run([sys.executable, "-m", "src.procurement.launcher", "--plan", str(plan),
+                           "--allow-unfrozen", "--bidder", "synthetic", "--poll-s", "1", "--stagger-s", "0",
+                           "--results-root", str(results / "runs"), "--decisions", str(tmp_path / "D.md")],
+                          cwd=repo_root, env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    (ws,) = (results / "launches").iterdir()
+    status = json.loads((ws / "status.json").read_text(encoding="utf-8"))
+    assert [r["state"] for r in status["runs"]] == ["done", "done"]
+    for r in status["runs"]:
+        assert len(pd.read_csv(Path(r["run_dir"]) / "bids.csv")) == 72
+        assert io.read_run_meta(r["run_dir"])["finished_utc"] is not None
