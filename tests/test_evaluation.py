@@ -130,7 +130,7 @@ def test_pair_classes_in_pair_eval(evaluated):
     pe = evaluated["pair_eval"]
     for cond in CONDITIONS:
         sub = pe[pe.run_id == f"{cond}_s1"]
-        assert len(sub) == 2 * 4 * 15  # two specs x four usable_T x 15 pairs
+        assert len(sub) == 3 * 4 * 15  # three specs x four usable_T x 15 pairs
         for _, g in sub.groupby(["spec", "usable_T"]):
             counts = g["pair_class"].value_counts().to_dict()
             if cond == "control":
@@ -234,7 +234,7 @@ def test_evaluate_csv_round_trip(evaluated):
     ctrl = raw[raw.run_id == "control_s1"].iloc[0]
     assert ctrl["fidelity"] == "" and ctrl["a3_top2"] == "" and ctrl["realized_rule"] == "n/a"
     praw = _read_csv(out / "pair_eval.csv")
-    assert len(praw) == len(pe) == 4 * 120
+    assert len(praw) == len(pe) == 4 * 180
     assert "<na>" not in praw.to_csv().lower()
     assert set(praw.loc[praw.run_id == "control_s1", "cartel_seats"]) == {""}
     assert set(praw.loc[praw.run_id == "cover_s1", "cartel_seats"]) == {"0;3"}
@@ -525,7 +525,7 @@ def test_stale_pair_stats_recomputed(evaluated, tmp_path):
     assert row["complete"] == 1 and row["projects_completed"] == 110
     assert set(pe.usable_T) == {30, 50, 70, 100} and set(pe.complete) == {1}
     thr = control_thresholds(pe)
-    assert set(thr) == {("tag", "A1"), ("tag", "A3"), ("project_fe", "A1"), ("project_fe", "A3")}
+    assert set(thr) == {(s, t) for s in ("tag", "tag_filtered", "project_fe") for t in ("A1", "A3")}
     assert ps_path.read_bytes() == before  # the run dir is never rewritten
 
     # mtime: a full-length pair_stats older than bids.csv is not trusted

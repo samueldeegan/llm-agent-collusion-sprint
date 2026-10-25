@@ -373,12 +373,12 @@ def test_pair_stats_schema(control1, tmp_path):
     df = detect_run(d, T=110, N=6, burn_in=10)
     text = (d / "detector" / "pair_stats.csv").read_text(encoding="utf-8")
     lines = text.splitlines()
-    assert lines[0] == ",".join(PAIR_STATS_COLUMNS) and len(lines) == 121
+    assert lines[0] == ",".join(PAIR_STATS_COLUMNS) and len(lines) == 181
     assert "nan" not in text.lower() and "<NA>" not in text and "None" not in text
     raw = pd.read_csv(d / "detector" / "pair_stats.csv", dtype=str, keep_default_na=False)
     for col in ("usable_T", "primary", "n_joint", "a1_flag", "a3_flag", "a3_df_num", "rank_u", "complete"):
         assert raw[col].str.fullmatch(r"-?\d*").all(), col  # ints, never "1.0"
-    assert len(df) == 120
+    assert len(df) == 180
 
 
 def test_cli(control1, tmp_path):
@@ -388,7 +388,7 @@ def test_cli(control1, tmp_path):
     bids.to_csv(d / "bids.csv", index=False)
     detector.main(["--run-dir", str(d), "--T", "110", "--N", "6", "--burn-in", "10"])
     raw = pd.read_csv(d / "detector" / "pair_stats.csv", dtype=str, keep_default_na=False)
-    assert len(raw) == 120 and set(raw["complete"]) == {"1"}
+    assert len(raw) == 180 and set(raw["complete"]) == {"1"}
     detector.main(["--run-dir", str(d), "--T", "120"])
     raw = pd.read_csv(d / "detector" / "pair_stats.csv", dtype=str, keep_default_na=False)
     assert set(raw["complete"]) == {"0"} and set(raw["primary"]) == {"0"}
@@ -445,7 +445,7 @@ def test_detector_reads_only_bids(tmp_path, monkeypatch):
     det = (d / "detector").resolve()
     assert writes and all(det in w.parents for w in writes)
     first = (d / "detector" / "pair_stats.csv").read_bytes()
-    assert len(first.decode("utf-8").splitlines()) == 1 + 15 * 2  # usable 30, both specs
+    assert len(first.decode("utf-8").splitlines()) == 1 + 15 * 3  # usable 30, all three specs
 
     for name in ("truth.csv", "messages.csv", "calls.csv", "run_meta.json", "heartbeat.json",
                  "checkpoint.json"):
@@ -473,3 +473,48 @@ def test_cli_never_writes_into_unfinished_run(tmp_path, capsys):
     (d / "run_meta.json").write_text(_json.dumps(meta), encoding="utf-8")
     detector.main(["--run-dir", str(d), "--T", "40"])
     assert (d / "detector" / "pair_stats.csv").is_file()
+
+
+# ------------------------------------------------------------------ tag_filtered spec
+
+def test_specs_order():
+    assert detector.SPECS == ("tag", "tag_filtered", "project_fe")
+    assert detector.SENTINEL_RATIO == 1.5
+
+
+def test_filtered_spec_drops_sentinels():
+    df = _balanced_table(seed=5, T=110)  # every bid <= 1.5 x EST: sentinel-free
+    base = detect_frames(df, specs=("tag", "tag_filtered"), usable_Ts=(100,))
+    t, tf = (base[base["spec"] == s].reset_index(drop=True) for s in ("tag", "tag_filtered"))
+    cmp = [c for c in t.columns if c != "spec"]
+    pd.testing.assert_frame_equal(t[cmp], tf[cmp])
+    f0 = sorted(df["firm_id"].unique())[0]
+    df2 = df.copy()
+    i = df2.index[(df2.project_id == 50) & (df2.firm_id == f0)][0]
+    df2.loc[i, "bid"] = 2.0 * df2.loc[i, "est"]
+    out = detect_frames(df2, specs=("tag", "tag_filtered"), usable_Ts=(100,))
+    pair = (out["firm_i"] == f0) | (out["firm_j"] == f0)
+    assert set(out.loc[pair & (out.spec == "tag"), "n_joint"]) == {100}
+    assert set(out.loc[pair & (out.spec == "tag_filtered"), "n_joint"]) == {99}
+    assert set(out.loc[~pair & (out.spec == "tag_filtered"), "n_joint"]) == {100}
+    assert set(out["rho0"][out.spec == "tag_filtered"]) == {0.0}
+
+
+def test_filtered_spec_all_sentinel_firm():
+    df = _balanced_table(seed=5, T=110)
+    f0 = sorted(df["firm_id"].unique())[0]
+    m = (df.firm_id == f0) & (df.project_id > 10)
+    df.loc[m, "bid"] = 3.0 * df.loc[m, "est"]
+    out = detect_frames(df, specs=("tag_filtered",), usable_Ts=(100,))
+    pair = (out["firm_i"] == f0) | (out["firm_j"] == f0)
+    assert (out.loc[pair, "a1_reason"] == "insufficient_n").all()
+    assert (out.loc[~pair, "a1_reason"] != "insufficient_n").all()
+    assert out.loc[~pair, "z"].notna().all()
+
+
+def test_build_design_tag_filtered_equals_tag(control1):
+    bids, _ = control1
+    rows = prepare_rows(bids, burn_in=10, usable_T=100)
+    a = build_design(rows, "tag")
+    b = build_design(rows, "tag_filtered")
+    assert a[1] == b[1] and a[2] == b[2] and np.array_equal(a[0], b[0])

@@ -32,7 +32,8 @@ MIN_N_JOINT = int(_DEFAULTS["min_n_joint"])
 EMPIRICAL_PERCENTILE = float(_DEFAULTS["empirical_percentile"])
 TAG_LEVELS = tuple(_DEFAULTS["cost"]["tag_labels"])  # the first (routine) is the base level
 
-SPECS = ("tag", "project_fe")
+SPECS = ("tag", "tag_filtered", "project_fe")
+SENTINEL_RATIO = 1.5  # bid / est above this is a no-bid placeholder, not a price
 COVARIATES = ("ldist", "cap", "maxp", "lmdist")
 A3_Q0_NOTE = "not_identified"  # appended to a pair's not_identified when q = rank_u - rank_c is 0
 
@@ -69,6 +70,16 @@ def _with_rivals(df: pd.DataFrame) -> pd.DataFrame:
     full["mdist"] = mdist
     full["maxp"] = maxp
     return full
+
+
+def filter_sentinels(full: pd.DataFrame) -> pd.DataFrame:
+    """Copy of ``full`` with ``bid`` set to NaN where ``bid / est > SENTINEL_RATIO`` (``won`` untouched).
+    Apply after ``_with_rivals`` so rival covariates are unchanged."""
+    out = full.copy()
+    ratio = out["bid"].to_numpy(dtype=float) / out["est"].to_numpy(dtype=float)
+    with np.errstate(invalid="ignore"):
+        out.loc[ratio > SENTINEL_RATIO, "bid"] = np.nan
+    return out
 
 
 def _select(full: pd.DataFrame, burn_in: int, usable_T: int, firms: list[str]) -> pd.DataFrame:
@@ -128,7 +139,7 @@ def build_design(rows: pd.DataFrame, spec: str, constrain: tuple[str, str] | Non
                  firms: list[str] | None = None) -> tuple[np.ndarray, list[str], list[str]]:
     """(X, column names, not_identified) in the §4h column order.
 
-    ``spec`` "tag": const, tag dummies (routine base), firm dummies (lexically first firm is the base),
+    ``spec`` "tag" (and "tag_filtered", identical here; the filtering happens in ``detect_frames``): const, tag dummies (routine base), firm dummies (lexically first firm is the base),
     then ``ldist_/cap_/maxp_/lmdist_<firm>`` for each firm in lexical order (m = 33).
     ``spec`` "project_fe": the tag dummies become ``proj_<id>`` for every project in ``rows`` except the
     smallest id (m = 129 at 100 usable projects). ``constrain=(i, j)`` gives X_C (m - 4 columns).
@@ -140,7 +151,7 @@ def build_design(rows: pd.DataFrame, spec: str, constrain: tuple[str, str] | Non
     n = len(rows)
     fid = rows["firm_id"].to_numpy()
     cols, names = [np.ones(n)], ["const"]
-    if spec == "tag":
+    if spec in ("tag", "tag_filtered"):
         tag = rows["tag"].to_numpy()
         for level in TAG_LEVELS[1:]:
             cols.append((tag == level).astype(float))
@@ -280,12 +291,14 @@ def detect_frames(bids_df: pd.DataFrame, run_id: str | None = None, specs=SPECS,
     complete = int(len(bids_df) == T * N)
     reached = usable_reached(full, burn_in)
     records = []
+    filtered = filter_sentinels(full)
     for spec in specs:
-        rho0 = 0.0 if spec == "tag" else -1.0 / (N - 1)
+        rho0 = 0.0 if spec in ("tag", "tag_filtered") else -1.0 / (N - 1)
+        src = filtered if spec == "tag_filtered" else full
         for usable_T in usable_Ts:
             if usable_T > reached:
                 continue
-            rows = _select(full, burn_in, usable_T, firms)
+            rows = _select(src, burn_in, usable_T, firms)
             XU, names, not_id = build_design(rows, spec, firms=firms)
             y = rows["y"].to_numpy(dtype=float)
             fid = rows["firm_id"].to_numpy()

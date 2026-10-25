@@ -99,9 +99,9 @@ def test_flag_rate_table(fx):
     expected = set()
     for cond in ("control",) + SCHEMES:
         classes = ("outsider",) if cond == "control" else CLASSES
-        expected |= set(product([cond], ("tag", "project_fe"), ("closed", "empirical"), classes,
+        expected |= set(product([cond], ("tag", "tag_filtered", "project_fe"), ("closed", "empirical"), classes,
                                 ("A1", "A3", "both")))
-    assert keys == expected and len(fr) == len(expected) == 120
+    assert keys == expected and len(fr) == len(expected) == 180
 
     # empirical thresholds come from complete control primary rows only
     ctrl = _prim(pe[pe.condition == "control"])
@@ -145,9 +145,9 @@ def test_flag_rate_table(fx):
 
     # the function, called directly, reproduces the file; no control run -> closed rows only
     direct = flag_rates(fx["pair_eval"], thr)
-    assert len(direct) == 120 and list(direct.columns) == FLAG_RATES_COLUMNS
+    assert len(direct) == 180 and list(direct.columns) == FLAG_RATES_COLUMNS
     closed_only = flag_rates(pe[pe.condition != "control"], {})
-    assert set(closed_only.threshold) == {"closed"} and len(closed_only) == 3 * 2 * 3 * 3
+    assert set(closed_only.threshold) == {"closed"} and len(closed_only) == 3 * 3 * 3 * 3
 
 
 def test_empirical_null_table(fx):
@@ -156,14 +156,14 @@ def test_empirical_null_table(fx):
     assert list(null.columns) == EMPIRICAL_NULL_COLUMNS
     assert set(null.run_id) == {"control_s1", "control_s2"}
     thr = control_thresholds(pe)
-    for spec, test in product(("tag", "project_fe"), ("A1", "A3")):
+    for spec, test in product(("tag", "tag_filtered", "project_fe"), ("A1", "A3")):
         g = null[(null.spec == spec) & (null.test == test)]
         assert len(g) == 30
         assert np.allclose(g.percentile_95, thr[(spec, test)])
         assert g.value.is_monotonic_increasing
         assert g.value.min() >= 0
     direct = empirical_null_table(pe)
-    assert len(direct) == 120 and list(direct.columns) == EMPIRICAL_NULL_COLUMNS
+    assert len(direct) == 180 and list(direct.columns) == EMPIRICAL_NULL_COLUMNS
 
 
 # ------------------------------------------------------------------ figure
@@ -329,7 +329,7 @@ def test_incomplete_runs_in_analysis(fx, tmp_path):
     assert set(fr.condition) == {"control"} and fr.n_runs.eq(1).all()
     assert fr.loc[fr.spec == "tag", "n_pairs"].eq(15).all()
     null = pd.read_csv(out / "empirical_null.csv")
-    assert set(null.run_id) == {"control_s1"} and len(null) == 4 * 15
+    assert set(null.run_id) == {"control_s1"} and len(null) == 6 * 15
     pw = pd.read_csv(out / "power_vs_T.csv")
     for u, n_runs, inc in ((30, 2, 1), (50, 2, 1), (70, 1, 0), (100, 1, 0)):
         row = _cell(pw, usable_T=u, test="A1")
@@ -355,7 +355,7 @@ def test_incomplete_runs_in_analysis(fx, tmp_path):
 def test_in_sample_control_rates_marked(fx):
     fr = pd.read_csv(fx["out"] / "flag_rates.csv")
     expected = ((fr.condition == "control") & (fr.threshold == "empirical")).astype(int)
-    assert fr.in_sample.tolist() == expected.tolist() and expected.sum() == 2 * 3  # 2 specs x 3 tests
+    assert fr.in_sample.tolist() == expected.tolist() and expected.sum() == 3 * 3  # 3 specs x 3 tests
     assert _read(fx["out"] / "flag_rates.csv")["in_sample"].isin(["0", "1"]).all()
     text = (fx["out"] / "README.md").read_text(encoding="utf-8")
     flag_section = text.split("## Flag rates (tag spec)")[1].split("\n## ")[0]
