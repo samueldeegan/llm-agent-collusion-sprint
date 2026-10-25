@@ -14,6 +14,11 @@ Writes ``<config-dir>/frozen.json`` (read by the launcher and ``cover_smoke.py -
 ``pilot`` section of ``<results-dir>/calibration.json`` (after every pilot) and one line in the decisions
 log. Runs go under ``<results-dir>/calibration_runs/`` (``purpose = "pilot"``).
 
+A re-run keeps the previous ``pilot`` record in the section's ``history`` list. The end of a successful
+run is ordered: ``pilot.status = "freezing"``, ``frozen.json``, the decisions line, ``pilot.status =
+"frozen"``; if the decisions line cannot be written the freeze stands (exit 0) and the line to add by
+hand is printed.
+
 Exit codes: 0 frozen; 3 STOP (audit 4.3 condition 3): a pilot's parse rate below 0.95, or the frozen m
 outside [0.95, 1.15] (no frozen.json is written); 5 key not set or rejected, or ``frozen.json`` already
 exists (audit 4.4: no parameter change after the freeze). The key is never printed or written."""
@@ -33,11 +38,19 @@ if str(REPO_ROOT) not in sys.path:
 from src.procurement import calibration, config, io, launcher  # noqa: E402
 from src.procurement import pilot as pl  # noqa: E402
 from src.procurement.client import FatalAPIError  # noqa: E402
-from src.procurement.config import RunConfig  # noqa: E402
 
 PROG = "pilot"
 T, BURN_IN = 20, 10
 STOP_REF = "step-4 audit Part 4.3 condition 3"
+
+
+def _safe_print(text: str, file) -> None:
+    """Print ``text``; on a console that cannot encode it (cp1252 and the beta0 symbol of a decisions
+    line), print it with backslash escapes instead of crashing."""
+    try:
+        print(text, file=file, flush=True)
+    except UnicodeEncodeError:
+        print(text.encode("ascii", "backslashreplace").decode("ascii"), file=file, flush=True)
 
 
 def _f(x, fmt=".4f") -> str:
@@ -68,10 +81,20 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
     results_dir = calibration.repo_path(args.results_dir)
     cal_path = results_dir / "calibration.json"
     decisions = calibration.repo_path(args.decisions)
+    try:
+        prior = calibration.section_history(cal_path, "pilot")  # before any API call
+    except ValueError as exc:
+        print(f"{PROG}: refusing to run: {exc}", file=sys.stderr)
+        return calibration.EXIT_REFUSE
 
-    per_pilot = launcher.planned_calls([RunConfig(condition="control", seed=1, T=T, burn_in=BURN_IN)])
-    print(f"{PROG}: about to make {per_pilot} model calls per pilot, at most {pl.MAX_PILOTS} pilots "
-          f"({pl.MAX_PILOTS * per_pilot} calls); start beta0 {base.beta0:g}", flush=True)
+    def pilot_config(beta0: float):
+        return calibration.run_config(defaults, condition="control", seed=1, T=T, burn_in=BURN_IN, bidder="llm",
+                                      cost=replace(base, beta0=beta0))
+
+    per_pilot = launcher.planned_calls([pilot_config(base.beta0)])
+    print(calibration.estimate_line(PROG, pl.MAX_PILOTS * per_pilot, pricing,
+                                    f"at most {pl.MAX_PILOTS} pilots x {per_pilot}: control, seed 1, T={T}, "
+                                    f"burn-in {BURN_IN}; start beta0 {base.beta0:g}"), flush=True)
 
     history: list[dict] = []
     spend: list[dict] = []
@@ -84,13 +107,12 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
                "band": list(pl.BAND), "target": pl.TARGET, "stop_band": list(pl.STOP_BAND),
                "comparators": {"all_bids": pl.COMPARATOR_ALL, "winning_bids": pl.COMPARATOR_WINNING,
                                "source": "B&Y Table 5, p. 980"},
-               "cost_usd": sum(s["cost_usd"] for s in spend), **(extra or {})}
+               "cost_usd": sum(s["cost_usd"] for s in spend), **(extra or {}), "history": prior}
         calibration.update_calibration(cal_path, "pilot", sec)
 
     beta0, idx = base.beta0, None
     for i in range(pl.MAX_PILOTS):
-        cfg = RunConfig(condition="control", seed=1, T=T, burn_in=BURN_IN, bidder="llm",
-                        cost=replace(base, beta0=beta0))
+        cfg = pilot_config(beta0)
         factory = calibration.choose_factory(cfg, bidder_factory, transport)
         print(f"{PROG}: pilot {i + 1}/{pl.MAX_PILOTS} at beta0 {beta0:.4f} ({per_pilot} calls)", flush=True)
         try:
@@ -145,19 +167,28 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
         return calibration.EXIT_STOP
 
     frozen_cost = replace(base, beta0=float(chosen["beta0"]))
-    pl.write_frozen(frozen_path, frozen_cost, history)
-    hist_text = "; ".join(f"pilot {k + 1}: beta0 {h['beta0']:.4f} -> m {h['m']:.4f}, SD {h['sd']:.4f}"
+    record("freezing", idx, {"frozen_path": str(frozen_path)})
+    pl.write_frozen(frozen_path, frozen_cost, calibration.json_clean(history))  # NaN -> null: valid JSON
+    hist_text = "; ".join(f"pilot {k + 1}: beta0 {h['beta0']:.4f} -> m {_f(h['m'])}, SD {_f(h['sd'])}"
                           for k, h in enumerate(history))
-    pl.append_decision(
-        decisions,
-        f"Froze β₀ = {chosen['beta0']:.4f} from pilot {idx + 1} of {len(history)} (m = {chosen['m']:.4f}, "
-        f"SD {chosen['sd']:.4f} vs B&Y 0.1837 not targeted; winning mean {chosen['winning_mean']:.4f}, "
-        f"SD {chosen['winning_sd']:.4f}); β₁ {frozen_cost.beta1:g}, β₂ {frozen_cost.beta2:g}, "
-        f"σ_ε {frozen_cost.sigma_eps:g} unchanged; history: {hist_text}; written to {frozen_path.name}",
-        "spec A47, step-4 audit Part 4.2 step 6", "no (audit 4.4: a change after the freeze needs a stop)")
-    record("frozen", idx, {"frozen_path": str(frozen_path)})
-    print(f"{PROG}: froze beta0 {chosen['beta0']:.4f} (pilot {idx + 1}) -> {frozen_path}; decision logged in "
-          f"{decisions}; total pilot cost ${sum(s['cost_usd'] for s in spend):.4f}")
+    decision = (f"Froze β₀ = {chosen['beta0']:.4f} from pilot {idx + 1} of {len(history)} (m = {_f(chosen['m'])}, "
+                f"SD {_f(chosen['sd'])} vs B&Y 0.1837 not targeted; winning mean {_f(chosen['winning_mean'])}, "
+                f"SD {_f(chosen['winning_sd'])}); β₁ {frozen_cost.beta1:g}, β₂ {frozen_cost.beta2:g}, "
+                f"σ_ε {frozen_cost.sigma_eps:g} unchanged; history: {hist_text}; written to {frozen_path.name}")
+    reason, reversible = "spec A47, step-4 audit Part 4.2 step 6", "no (audit 4.4: a change after the freeze needs a stop)"
+    logged = True
+    try:
+        pl.append_decision(decisions, decision, reason, reversible)
+    except Exception as exc:  # noqa: BLE001 - the freeze is valid; the log line can be added by hand
+        logged = False
+        line = f"- {datetime.now(timezone.utc):%Y-%m-%d %H:%M} | {decision} | {reason} | {reversible}"
+        _safe_print(f"{PROG}: WARNING: frozen.json is written and valid, but the decisions line could not be "
+                    f"appended to {decisions} ({type(exc).__name__}: {exc}). Add this line by hand (UTF-8):\n"
+                    f"{line}", sys.stderr)
+    record("frozen", idx, {"frozen_path": str(frozen_path), "decision_logged": logged})
+    print(f"{PROG}: froze beta0 {chosen['beta0']:.4f} (pilot {idx + 1}) -> {frozen_path}; decision "
+          + (f"logged in {decisions}" if logged else "NOT logged (see warning)")
+          + f"; total pilot cost ${sum(s['cost_usd'] for s in spend):.4f}")
     return calibration.EXIT_OK
 
 

@@ -11,13 +11,19 @@ through the client's SDK transport (``with_raw_response``, ``max_retries=0``). T
 output_tokens}, "2": {...}}``) with ``tier_check_utc``; the sizing rule and the launcher's process cap
 are printed.
 
+A non-auth transport error (429, 5xx, timeout, connection) is retried once. If the slot then still
+yields no limit header at all (from the response, or from the error response's headers), that slot's
+earlier values in calibration.json are kept, with ``last_error`` added ("transient error, limits not
+updated"); a 429 whose response carries the headers has its limits read.
+
 Exit codes: 0 all headers read; 4 a header missing (what was found is written, with null for the rest;
-the launcher then refuses the file in real mode); 5 ``ANTHROPIC_API_KEY`` not set, or a key rejected
+the launcher then refuses the file in real mode) or a slot whose limits were not updated; 5 ``ANTHROPIC_API_KEY`` not set, or a key rejected
 (401/403: "key invalid for slot N", audit 4.3 condition 5). The key is never printed or written."""
 from __future__ import annotations
 
 import argparse
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -34,6 +40,8 @@ HEADERS = {"requests": "anthropic-ratelimit-requests-limit",
            "input_tokens": "anthropic-ratelimit-input-tokens-limit",
            "output_tokens": "anthropic-ratelimit-output-tokens-limit"}
 PLAN_SIZE = 32  # the full plan (12/12/4/4), for the printed process cap
+RETRY_WAIT_S = 2.0  # before the one retry of a non-auth transport error (retry-after wins, capped at 30 s)
+_sleep = time.sleep  # tests replace it
 
 
 def request(model: str) -> dict:
@@ -53,6 +61,39 @@ def read_limits(headers: dict) -> dict:
     return {k: _int(low.get(h)) for k, h in HEADERS.items()}
 
 
+def _existing_limits(data: dict) -> dict[str, dict]:
+    """The ``limits`` of an earlier calibration.json by slot (a flat entry is slot 1)."""
+    raw = data.get("limits") or {}
+    if not isinstance(raw, dict):
+        return {}
+    if "output_tokens" in raw or "requests" in raw:
+        raw = {"1": raw}
+    return {str(k): dict(v) for k, v in raw.items() if isinstance(v, dict)}
+
+
+def _call(send, kwargs: dict, slot: int):
+    """``(body, headers, error)``: one call, retried once on a non-auth TransportError. ``error`` is the
+    last TransportError when both attempts failed (``body`` is then ``{}`` and ``headers`` its headers).
+    Auth errors and FatalAPIError propagate."""
+    for attempt in (1, 2):
+        try:
+            body, headers = send(kwargs)
+            return body, headers, None
+        except TransportError as err:
+            if err.kind == "auth" or err.status in (401, 403):
+                raise
+            if attempt == 1:
+                wait = min(max(err.retry_after or RETRY_WAIT_S, 1.0), 30.0)
+                print(f"{PROG}: warning: slot {slot} call failed ({err.kind}, status {err.status}); retrying once "
+                      f"in {wait:g} s", file=sys.stderr, flush=True)
+                _sleep(wait)
+                continue
+            print(f"{PROG}: warning: slot {slot} retry failed ({err.kind}, status {err.status}); reading the "
+                  "headers of the error response", file=sys.stderr, flush=True)
+            return {}, err.headers, err
+    raise AssertionError("unreachable")
+
+
 def main(argv=None, *, bidder_factory=None, transport=None) -> int:
     ap = argparse.ArgumentParser(prog=PROG, description="One minimal call per key; record the rate limits.")
     ap.add_argument("--results-dir", default="results", help="parent of calibration.json (default: results)")
@@ -69,8 +110,15 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
     pricing = calibration.pricing_from_defaults(defaults)
     model = defaults.get("model", RunConfig.model)
     cal_path = calibration.repo_path(args.results_dir) / "calibration.json"
-    print(f"{PROG}: about to make {len(slots)} minimal model call(s) (model {model}, max_tokens 64; key slot(s) "
-          f"{', '.join(map(str, slots))})", flush=True)
+    try:
+        earlier = _existing_limits(calibration.read_calibration_file(cal_path))
+    except ValueError as exc:
+        print(f"{PROG}: refusing to run: {exc}", file=sys.stderr)
+        return calibration.EXIT_REFUSE
+    print(calibration.estimate_line(PROG, len(slots), pricing,
+                                    f"minimal, model {model}, max_tokens 64, key slot(s) "
+                                    f"{', '.join(map(str, slots))}; a large over-estimate for 64-token calls"),
+          flush=True)
 
     limits: dict[str, dict] = {}
     code = calibration.EXIT_OK
@@ -83,7 +131,7 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
     for slot in slots:
         send = transport if transport is not None else client._DefaultTransport(calibration.KEY_VARS[slot])
         try:
-            body, headers = send(request(model))
+            body, headers, error = _call(send, request(model), slot)
         except FatalAPIError as exc:  # the key variable vanished between the check and the call
             print(f"{PROG}: key invalid for slot {slot}: {calibration.scrub(str(exc))}", file=sys.stderr)
             if limits:
@@ -96,10 +144,17 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
                 if limits:
                     save()
                 return calibration.EXIT_REFUSE
-            print(f"{PROG}: warning: slot {slot} call failed ({err.kind}, status {err.status}); reading the "
-                  "headers of the error response", file=sys.stderr)
-            body, headers = {}, err.headers
+            raise  # _call re-raises only auth errors
         found = read_limits(headers)
+        if all(v is None for v in found.values()):
+            what = (f"{error.kind}, status {error.status}" if error is not None
+                    else "response without rate-limit headers")
+            keep = {k: v for k, v in earlier.get(str(slot), {}).items() if k != "last_error"}
+            limits[str(slot)] = {**{k: None for k in HEADERS}, **keep, "last_error": what}
+            print(f"{PROG}: slot {slot}: transient error, limits not updated ({what}); "
+                  + ("earlier values kept" if keep else "no earlier values"), file=sys.stderr)
+            code = calibration.EXIT_PARTIAL
+            continue
         limits[str(slot)] = found
         usage = (body or {}).get("usage") or {}
         usd += pricing.cost_usd(_int(usage.get("input_tokens")) or 0, _int(usage.get("output_tokens")) or 0,
@@ -115,12 +170,12 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
 
     save()
     print(f"{PROG}: wrote limits and tier_check_utc to {cal_path}; cost ${usd:.6f}")
-    out1 = limits["1"]["output_tokens"]
+    out1 = limits["1"].get("output_tokens")
     if out1 is not None:
         sized = launcher.apply_sizing(limits["1"], has_key2)
         print(f"{PROG}: sizing rule (output-tokens limit {out1}, key 2 {'set' if has_key2 else 'not set'}): "
               f"R = {config.sizing_rule(out1, has_key2)}, keys {sized['keys']}")
-        req1 = limits["1"]["requests"]
+        req1 = limits["1"].get("requests")
         if req1 is not None:
             cal = launcher.read_calibration(cal_path) or {}
             call_s = cal.get("mean_latency_s") or 10.0

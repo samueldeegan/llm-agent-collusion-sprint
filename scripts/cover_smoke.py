@@ -3,6 +3,7 @@ Part 4.2 step 5): one 10-project cover run on Haiku, 80 calls (6 bids + 2 messag
 
     .venv\\Scripts\\python.exe scripts\\cover_smoke.py --phase prefreeze|postfreeze
         [--results-dir results] [--config-dir config] [--seeds 100] [--skip-scripted]
+    .venv\\Scripts\\python.exe scripts\\cover_smoke.py --note-skip-postfreeze [--results-dir results]
 
 ``prefreeze`` runs before the pilot at the ``config/defaults.json`` cost parameters and is the audit
 4.3 condition 3 stop check; ``postfreeze`` runs after the pilot at the ``config/frozen.json`` parameters
@@ -12,11 +13,19 @@ margin" sensitivity row. The run goes under ``<results-dir>/calibration_runs/`` 
 ``margin_raw`` and ``margin_excess``, their medians, the realized rule, fidelity, latency, mean output
 tokens) and ``measured``. Then, unless ``--skip-scripted``, the scripted signatures are simulated (no
 API) at 0.10 and at the realized median excess margin (rounded to 0.01, floored at 0.01) into a NEW
-``<results-dir>/analysis/<UTC>/scripted_signatures.csv``.
+``<results-dir>/analysis/<UTC>/scripted_signatures.csv``. A re-run keeps the previous record of its
+section in the section's ``history`` list.
 
-Exit codes: 0 done (postfreeze always, warnings printed); 3 STOP, prefreeze only: realized rule
-"shadow" or fidelity < 0.5 (written to calibration.json first); 5 key not set or rejected, or (postfreeze)
-no ``config/frozen.json``. The key is read from the environment and never printed or written."""
+``--note-skip-postfreeze`` (A48: the time ladder forces skipping the second smoke) makes no API call: it
+writes ``cover_smoke_postfreeze = {"skipped": true, "reason": "time ladder", "using":
+"cover_smoke_prefreeze"}`` and exits 0; it refuses (exit 5) when there is no prefreeze record or when a
+real postfreeze measurement already exists.
+
+Exit codes: 0 done (postfreeze always, warnings printed); 1 the scripted step failed without a stop (the
+run's numbers are recorded; rerun ``python -m src.procurement.scripted``); 3 STOP, prefreeze only:
+realized rule "shadow" or fidelity < 0.5 (written to calibration.json and printed before the scripted
+step, and exit 3 whatever that step does); 5 key not set or rejected, or (postfreeze) no
+``config/frozen.json``. The key is read from the environment and never printed or written."""
 from __future__ import annotations
 
 import argparse
@@ -31,7 +40,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.procurement import calibration, config, evaluation, fidelity, io, launcher, scripted  # noqa: E402
 from src.procurement.client import FatalAPIError  # noqa: E402
-from src.procurement.config import RunConfig  # noqa: E402
 
 PROG = "cover_smoke"
 FIDELITY_FLOOR = 0.5
@@ -73,15 +81,48 @@ def _scripted_summary(df, rows) -> list[str]:
     return lines
 
 
+def note_skip_postfreeze(cal_path: Path) -> int:
+    """A48: record that the post-freeze smoke was skipped and the prefreeze numbers stand. No API."""
+    try:
+        data = calibration.read_calibration_file(cal_path)
+    except ValueError as exc:
+        print(f"{PROG}: refusing --note-skip-postfreeze: {exc}", file=sys.stderr)
+        return calibration.EXIT_REFUSE
+    if not isinstance(data.get("cover_smoke_prefreeze"), dict):
+        print(f"{PROG}: refusing --note-skip-postfreeze: no cover_smoke_prefreeze record in {cal_path}",
+              file=sys.stderr)
+        return calibration.EXIT_REFUSE
+    post = data.get("cover_smoke_postfreeze")
+    if isinstance(post, dict) and not post.get("skipped"):
+        print(f"{PROG}: refusing --note-skip-postfreeze: {cal_path} already holds a post-freeze measurement",
+              file=sys.stderr)
+        return calibration.EXIT_REFUSE
+    note = {"skipped": True, "reason": "time ladder", "using": "cover_smoke_prefreeze",
+            "utc": datetime.now(timezone.utc).isoformat(),
+            "history": calibration.section_history(cal_path, "cover_smoke_postfreeze")}
+    calibration.update_calibration(cal_path, "cover_smoke_postfreeze", note)
+    print(f"{PROG}: recorded cover_smoke_postfreeze as skipped (time ladder); the prefreeze numbers are used "
+          f"({cal_path})")
+    return calibration.EXIT_OK
+
+
 def main(argv=None, *, bidder_factory=None, transport=None) -> int:
     ap = argparse.ArgumentParser(prog=PROG, description="10-project cover smoke run on Haiku (80 calls).")
-    ap.add_argument("--phase", required=True, choices=("prefreeze", "postfreeze"))
+    ap.add_argument("--phase", choices=("prefreeze", "postfreeze"), help="required unless --note-skip-postfreeze")
+    ap.add_argument("--note-skip-postfreeze", action="store_true",
+                    help="record that the post-freeze smoke is skipped (A48 time ladder); no API call")
     ap.add_argument("--results-dir", default="results",
                     help="parent of calibration_runs/, analysis/ and calibration.json (default: results)")
     ap.add_argument("--config-dir", default="config", help="where frozen.json is read (default: config)")
     ap.add_argument("--seeds", type=int, default=100, help="seeds of the scripted signatures (default 100)")
     ap.add_argument("--skip-scripted", action="store_true", help="do not run the scripted signatures")
     args = ap.parse_args(argv)
+    if args.note_skip_postfreeze:
+        if args.phase == "prefreeze":
+            ap.error("--note-skip-postfreeze concerns the postfreeze phase")
+        return note_skip_postfreeze(calibration.repo_path(args.results_dir) / "calibration.json")
+    if args.phase is None:
+        ap.error("--phase is required (or --note-skip-postfreeze)")
 
     var = calibration.missing_key(1)
     if var:
@@ -104,16 +145,22 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
             return calibration.EXIT_REFUSE
         frozen_from = str(frozen_path)
 
-    cfg = RunConfig(condition="cover", seed=1, T=10, burn_in=0, bidder="llm", cost=cost)
+    cfg = calibration.run_config(defaults, condition="cover", seed=1, T=10, burn_in=0, bidder="llm", cost=cost)
     results_dir = calibration.repo_path(args.results_dir)
     cal_path = results_dir / "calibration.json"
     section_name = f"cover_smoke_{args.phase}"
     factory = calibration.choose_factory(cfg, bidder_factory, transport)
+    try:
+        history = calibration.section_history(cal_path, section_name)  # before any API call
+    except ValueError as exc:
+        print(f"{PROG}: refusing to run: {exc}", file=sys.stderr)
+        return calibration.EXIT_REFUSE
 
     print(f"{PROG}: phase {args.phase}, beta0 {cost.beta0:g}"
           + (f" (from {frozen_from})" if frozen_from else " (config/defaults.json)"))
-    print(f"{PROG}: about to make {launcher.planned_calls([cfg])} model calls "
-          f"(cover, seed 1, T={cfg.T}, model {cfg.model}, max_tokens {cfg.max_tokens})", flush=True)
+    print(calibration.estimate_line(PROG, launcher.planned_calls([cfg]), pricing,
+                                    f"cover, seed 1, T={cfg.T}, model {cfg.model}, max_tokens {cfg.max_tokens}"),
+          flush=True)
     try:
         run_dir = calibration.run_calibration(cfg, factory, results_dir, "cover_smoke", frozen_from)
     except FatalAPIError as exc:
@@ -148,7 +195,7 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
         "message_failure_reasons": calibration.failure_reasons(run_dir, "message"),
         **stats,
         "stop": stop, "warning": warning, "scripted_signatures": None, "scripted_seeds": None,
-        "scripted_extra_margin": extra,
+        "scripted_extra_margin": extra, "scripted_error": None, "history": history,
     }
     calibration.update_calibration_sections(cal_path, {
         section_name: section, "measured": calibration.measured_section(stats, rate, section_name)})
@@ -169,27 +216,41 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
     calibration.print_call_stats(stats, PROG)
     print(f"{PROG}: wrote {section_name} and measured to {cal_path}", flush=True)
 
+    if stop:  # reported now, so a failure in the (offline) scripted step cannot hide it
+        print(f"{PROG}: STOP ({STOP_REF}): {stop}. Recorded in {cal_path} [{section_name}]. "
+              "Do not run the pilot; the design cannot run as specified.", flush=True)
+
+    scripted_failed = False
     if not args.skip_scripted:
-        out_dir = evaluation.new_out_dir(results_dir / "analysis")
-        path = out_dir / scripted.OUTPUT_NAME
-        print(f"{PROG}: scripted signatures (no API), {args.seeds} seeds, at 0.10"
-              + (f" and {extra:.2f}" if extra is not None else " (no realized margin: 0.10 only)")
-              + f" -> {path}", flush=True)
-        df = scripted.run_scripted(seeds=args.seeds, extra_margin=extra)
-        scripted.write_scripted(df, path)
-        rows = ["cover_m0.10"] + ([f"cover_m{extra:.2f}"] if extra is not None else [])
-        for line in _scripted_summary(df, dict.fromkeys(rows)):
-            print(f"{PROG}:   {line}")
-        section.update(scripted_signatures=str(path), scripted_seeds=args.seeds)
+        try:
+            out_dir = evaluation.new_out_dir(results_dir / "analysis")
+            path = out_dir / scripted.OUTPUT_NAME
+            print(f"{PROG}: scripted signatures (no API), {args.seeds} seeds, at 0.10"
+                  + (f" and {extra:.2f}" if extra is not None else " (no realized margin: 0.10 only)")
+                  + f" -> {path}", flush=True)
+            df = scripted.run_scripted(seeds=args.seeds, extra_margin=extra)
+            scripted.write_scripted(df, path)
+            rows = ["cover_m0.10"] + ([f"cover_m{extra:.2f}"] if extra is not None else [])
+            for line in _scripted_summary(df, dict.fromkeys(rows)):
+                print(f"{PROG}:   {line}")
+            section.update(scripted_signatures=str(path), scripted_seeds=args.seeds)
+        except Exception as exc:  # noqa: BLE001 - recorded; the run's own numbers stand
+            scripted_failed = True
+            err = calibration.scrub(f"{type(exc).__name__}: {exc}")
+            section.update(scripted_error=err)
+            rerun = f"python -m src.procurement.scripted --seeds {args.seeds}" + (
+                f" --extra-margin {extra:.2f}" if extra is not None else "")
+            print(f"{PROG}: ERROR: scripted signatures failed ({err}); recorded as scripted_error. "
+                  f"Rerun offline: {rerun}", file=sys.stderr, flush=True)
         calibration.update_calibration(cal_path, section_name, section)
 
     if stop:
-        print(f"{PROG}: STOP ({STOP_REF}): {stop}. Recorded in {cal_path} [{section_name}]. "
-              "Do not run the pilot; the design cannot run as specified.")
+        if scripted_failed:
+            print(f"{PROG}: STOP stands ({stop}); the scripted step failed separately (see above).")
         return calibration.EXIT_STOP
     if warning:
         print(f"{PROG}: WARNING (post-freeze measurement, no stop): {warning}")
-    return calibration.EXIT_OK
+    return calibration.EXIT_FAIL if scripted_failed else calibration.EXIT_OK
 
 
 if __name__ == "__main__":

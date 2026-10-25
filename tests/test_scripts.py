@@ -417,3 +417,230 @@ def test_tier_check_missing_header_exit_4(tmp_path, key, capsys):
     # the launcher refuses such a file in real mode rather than guessing
     assert launcher.read_calibration(tmp_path / "calibration.json") is None
     assert "output-tokens" in capsys.readouterr().err
+
+
+# ------------------------------------------------------------------ review round 1 fixes
+
+def _no_sleep(mod):
+    mod._sleep = lambda s: None
+    return mod
+
+
+def test_cover_smoke_stop_survives_scripted_failure(tmp_path, key, monkeypatch, capsys):
+    from src.procurement import scripted
+    monkeypatch.setattr(fidelity, "realized_rule",
+                        lambda *a, **k: dict(label="shadow", b_own=0.1, b_partner=0.9, n_cover=10))
+
+    def boom(*a, **k):
+        raise RuntimeError("scripted exploded")
+    monkeypatch.setattr(scripted, "run_scripted", boom)
+    mod = load_script("cover_smoke")
+    code = mod.main(["--phase", "prefreeze", "--results-dir", str(tmp_path), "--config-dir", str(tmp_path),
+                     "--seeds", "2"], bidder_factory=synthetic_bidder_factory)
+    out = capsys.readouterr()
+    assert code == 3
+    assert "STOP" in out.out and "shadow" in out.out
+    sec = _cal(tmp_path)["cover_smoke_prefreeze"]
+    assert sec["stop"] and "scripted exploded" in sec["scripted_error"]
+    assert sec["scripted_signatures"] is None
+    assert "scripted exploded" in out.err
+
+
+def test_cover_smoke_scripted_failure_without_stop_exit_1(tmp_path, key, monkeypatch, capsys):
+    from src.procurement import scripted
+
+    def boom(*a, **k):
+        raise RuntimeError("scripted exploded")
+    monkeypatch.setattr(scripted, "run_scripted", boom)
+    mod = load_script("cover_smoke")
+    code = mod.main(["--phase", "prefreeze", "--results-dir", str(tmp_path), "--config-dir", str(tmp_path),
+                     "--seeds", "2"], bidder_factory=synthetic_bidder_factory)
+    out = capsys.readouterr()
+    assert code == 1 and "STOP" not in out.out and "python -m src.procurement.scripted" in out.err
+    sec = _cal(tmp_path)["cover_smoke_prefreeze"]
+    assert sec["stop"] is None and "scripted exploded" in sec["scripted_error"]
+    assert sec["realized_rule"] == "inflate"  # the run's own numbers stand
+
+
+def test_cover_smoke_rerun_keeps_history(tmp_path, key, monkeypatch, capsys):
+    monkeypatch.setattr(fidelity, "realized_rule",
+                        lambda *a, **k: dict(label="shadow", b_own=0.1, b_partner=0.9, n_cover=10))
+    mod = load_script("cover_smoke")
+    args = ["--phase", "prefreeze", "--results-dir", str(tmp_path), "--config-dir", str(tmp_path),
+            "--skip-scripted"]
+    assert mod.main(args, bidder_factory=synthetic_bidder_factory) == 3
+    first = _cal(tmp_path)["cover_smoke_prefreeze"]
+    assert first["history"] == []
+    monkeypatch.undo()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", SECRET)
+    assert mod.main(args, bidder_factory=synthetic_bidder_factory) == 0
+    second = _cal(tmp_path)["cover_smoke_prefreeze"]
+    assert second["stop"] is None and len(second["history"]) == 1
+    old = second["history"][0]
+    assert "history" not in old and old["stop"] and old["run_dir"] == first["run_dir"]
+    assert mod.main(args, bidder_factory=synthetic_bidder_factory) == 0
+    third = _cal(tmp_path)["cover_smoke_prefreeze"]
+    assert [h["run_dir"] for h in third["history"]] == [first["run_dir"], second["run_dir"]]
+
+
+def test_note_skip_postfreeze(tmp_path, key, monkeypatch, capsys):
+    mod = load_script("cover_smoke")
+    note = ["--note-skip-postfreeze", "--results-dir", str(tmp_path)]
+    assert mod.main(note) == 5  # no prefreeze record yet
+    assert mod.main(["--phase", "prefreeze", "--results-dir", str(tmp_path), "--config-dir", str(tmp_path),
+                     "--skip-scripted"], bidder_factory=synthetic_bidder_factory) == 0
+    n_dirs = len(_run_dirs(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_API_KEY")  # no API call, so no key needed
+
+    def no_run(*a, **k):
+        raise AssertionError("the skip note must not run anything")
+    assert mod.main(note, bidder_factory=no_run) == 0
+    sec = _cal(tmp_path)["cover_smoke_postfreeze"]
+    assert {k: sec[k] for k in ("skipped", "reason", "using")} == \
+        {"skipped": True, "reason": "time ladder", "using": "cover_smoke_prefreeze"}
+    assert len(_run_dirs(tmp_path)) == n_dirs
+    assert _cal(tmp_path)["cover_smoke_prefreeze"]["realized_rule"] == "inflate"  # untouched
+
+
+def test_note_skip_refuses_over_real_postfreeze(tmp_path, key, capsys):
+    from src.procurement import calibration
+    calibration.update_calibration(tmp_path / "calibration.json", "cover_smoke_prefreeze", {"phase": "prefreeze"})
+    calibration.update_calibration(tmp_path / "calibration.json", "cover_smoke_postfreeze", {"phase": "postfreeze"})
+    mod = load_script("cover_smoke")
+    assert mod.main(["--note-skip-postfreeze", "--results-dir", str(tmp_path)]) == 5
+    assert _cal(tmp_path)["cover_smoke_postfreeze"] == {"phase": "postfreeze"}
+
+
+def test_defaults_reach_run_meta(tmp_path, key, monkeypatch, capsys):
+    from src.procurement import config
+    real = config.load_defaults()
+    changed = {**real, "memory_window": 7, "history_window": 15, "max_tokens": 6000, "concurrency": 3,
+               "max_message_length": 300}
+    monkeypatch.setattr(config, "load_defaults", lambda *a, **k: changed)
+    for name, args in (("smoke_llm", []),
+                       ("cover_smoke", ["--phase", "prefreeze", "--config-dir", str(tmp_path), "--skip-scripted"]),
+                       ("pilot", ["--config-dir", str(tmp_path), "--decisions", str(tmp_path / "D.md")])):
+        mod = load_script(name)
+        assert mod.main(["--results-dir", str(tmp_path), *args], bidder_factory=synthetic_bidder_factory) == 0
+    dirs = _run_dirs(tmp_path)
+    assert len(dirs) >= 3
+    for d in dirs:
+        meta = io.read_run_meta(d)
+        assert meta["windows"] == {"history": 15, "memory": 7}, d
+        assert meta["max_tokens"] == 6000 and meta["concurrency"] == 3
+    out = capsys.readouterr().out
+    assert out.count("a-priori cost $") >= 3
+
+
+def test_estimate_line_before_calls(tmp_path, key, capsys):
+    mod = load_script("smoke_llm")
+    assert mod.main(["--results-dir", str(tmp_path)], bidder_factory=synthetic_bidder_factory) == 0
+    first = capsys.readouterr().out.splitlines()[0]
+    assert "about to make 18 model calls" in first and "a-priori cost $0.0198" in first
+
+
+def _frozen_text(tmp_path) -> dict:
+    def bad(c):
+        raise AssertionError(f"non-JSON constant {c} in frozen.json")
+    return json.loads((tmp_path / "frozen.json").read_text(encoding="utf-8"), parse_constant=bad)
+
+
+def _fake_summary(monkeypatch, **override):
+    real = pilot.pilot_summary
+
+    def fake(bids, truth, burn_in=10):
+        s = real(bids, truth, burn_in)
+        s.update(override)
+        return s
+    monkeypatch.setattr(pilot, "pilot_summary", fake)
+
+
+def test_pilot_frozen_history_nan_safe(tmp_path, key, monkeypatch, capsys):
+    _fake_summary(monkeypatch, mean_bid_over_est=1.05, winning_sd=float("nan"))
+    mod = load_script("pilot")
+    assert mod.main(_pilot_args(tmp_path), bidder_factory=synthetic_bidder_factory) == 0
+    data = _frozen_text(tmp_path)
+    assert data["pilot_history"][0]["winning_sd"] is None and data["cost"]["beta0"] == 0.90
+    assert "n/a" in (tmp_path / "DECISIONS.md").read_text(encoding="utf-8")
+
+
+def test_pilot_decision_failure_keeps_freeze(tmp_path, key, monkeypatch, capsys):
+    _fake_summary(monkeypatch, mean_bid_over_est=1.05)
+
+    def broken(*a, **k):
+        raise OSError("decisions file locked")
+    monkeypatch.setattr(pilot, "append_decision", broken)
+    mod = load_script("pilot")
+    assert mod.main(_pilot_args(tmp_path), bidder_factory=synthetic_bidder_factory) == 0
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "decisions file locked" in err and "Froze β₀ = 0.9000" in err
+    assert launcher.read_frozen(tmp_path / "frozen.json", _frozen_cost(0.5)).beta0 == 0.90
+    sec = _cal(tmp_path)["pilot"]
+    assert sec["status"] == "frozen" and sec["decision_logged"] is False
+
+
+def test_pilot_records_freezing_before_write(tmp_path, key, monkeypatch):
+    _fake_summary(monkeypatch, mean_bid_over_est=1.05)
+
+    def broken(*a, **k):
+        raise OSError("config dir read-only")
+    monkeypatch.setattr(pilot, "write_frozen", broken)
+    mod = load_script("pilot")
+    with pytest.raises(OSError):
+        mod.main(_pilot_args(tmp_path), bidder_factory=synthetic_bidder_factory)
+    assert _cal(tmp_path)["pilot"]["status"] == "freezing"
+    assert not (tmp_path / "frozen.json").exists() and not (tmp_path / "DECISIONS.md").exists()
+
+
+def test_pilot_rerun_keeps_history(tmp_path, key, capsys):
+    bad = {(seat, "bid", p): "I would rather not say." for seat in (0, 1) for p in range(1, 21)}
+    mod = load_script("pilot")
+    assert mod.main(_pilot_args(tmp_path), bidder_factory=stub_factory(StubClient(replies=bad))) == 3
+    first = _cal(tmp_path)["pilot"]
+    assert first["history"] == []
+    assert mod.main(_pilot_args(tmp_path), bidder_factory=synthetic_bidder_factory) == 0
+    second = _cal(tmp_path)["pilot"]
+    assert second["status"] == "frozen" and len(second["history"]) == 1
+    old = second["history"][0]
+    assert old["status"] == "stop_parse_rate" and "history" not in old
+    assert old["pilots"][0]["run_dir"] == first["pilots"][0]["run_dir"]
+
+
+def test_tier_check_transient_error_keeps_good_limits(tmp_path, key, capsys):
+    from src.procurement import calibration
+    good = {"requests": 4000, "input_tokens": 2000000, "output_tokens": 400000}
+    calibration.update_calibration(tmp_path / "calibration.json", "limits", {"1": good})
+    fake = FakeTransport(TransportError("rate_limit", 429, None, "slow down"),
+                         TransportError("rate_limit", 429, None, "slow down"))
+    mod = _no_sleep(load_script("tier_check"))
+    assert mod.main(["--results-dir", str(tmp_path)], transport=fake) == 4
+    assert len(fake.requests) == 2  # retried once
+    lim = _cal(tmp_path)["limits"]["1"]
+    assert {k: lim[k] for k in good} == good and "429" in lim["last_error"]
+    assert launcher.read_calibration(tmp_path / "calibration.json")["limits"][1]["output_tokens"] == 400000
+    assert "transient error, limits not updated" in capsys.readouterr().err
+
+
+def test_tier_check_transient_error_without_earlier_values(tmp_path, key, capsys):
+    fake = FakeTransport(TransportError("server", 529, None, "overloaded"),
+                         TransportError("server", 529, None, "overloaded"))
+    mod = _no_sleep(load_script("tier_check"))
+    assert mod.main(["--results-dir", str(tmp_path)], transport=fake) == 4
+    lim = _cal(tmp_path)["limits"]["1"]
+    assert lim["output_tokens"] is None and "529" in lim["last_error"]
+    assert launcher.read_calibration(tmp_path / "calibration.json") is None
+
+
+def test_tier_check_429_with_headers_reads_limits(tmp_path, key, capsys):
+    fake = FakeTransport(TransportError("rate_limit", 429, None, "x", HEADERS_1),
+                         TransportError("rate_limit", 429, None, "x", HEADERS_1))
+    mod = _no_sleep(load_script("tier_check"))
+    assert mod.main(["--results-dir", str(tmp_path)], transport=fake) == 0
+    assert _cal(tmp_path)["limits"]["1"] == {"requests": 4000, "input_tokens": 2000000, "output_tokens": 400000}
+
+
+def test_tier_check_retry_then_success(tmp_path, key, capsys):
+    fake = FakeTransport(TransportError("connection", None, None, "reset"), HEADERS_1)
+    mod = _no_sleep(load_script("tier_check"))
+    assert mod.main(["--results-dir", str(tmp_path)], transport=fake) == 0
+    assert len(fake.requests) == 2 and _cal(tmp_path)["limits"]["1"]["requests"] == 4000

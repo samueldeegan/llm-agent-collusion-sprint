@@ -21,7 +21,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.procurement import calibration, config, io, launcher  # noqa: E402
 from src.procurement.client import FatalAPIError  # noqa: E402
-from src.procurement.config import RunConfig  # noqa: E402
 
 PROG = "smoke_llm"
 
@@ -39,14 +38,14 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
 
     defaults = config.load_defaults()
     pricing = calibration.pricing_from_defaults(defaults)
-    cfg = RunConfig(condition="control", seed=1, T=3, burn_in=0, bidder="llm",
-                    cost=calibration.cost_from_defaults(defaults))
+    cfg = calibration.run_config(defaults, condition="control", seed=1, T=3, burn_in=0, bidder="llm")
     results_dir = calibration.repo_path(args.results_dir)
     cal_path = results_dir / "calibration.json"
     factory = calibration.choose_factory(cfg, bidder_factory, transport)
 
-    print(f"{PROG}: about to make {launcher.planned_calls([cfg])} model calls "
-          f"(control, seed 1, T={cfg.T}, N={cfg.N}, model {cfg.model}, max_tokens {cfg.max_tokens})", flush=True)
+    print(calibration.estimate_line(PROG, launcher.planned_calls([cfg]), pricing,
+                                    f"control, seed 1, T={cfg.T}, N={cfg.N}, model {cfg.model}, "
+                                    f"max_tokens {cfg.max_tokens}"), flush=True)
     try:
         run_dir = calibration.run_calibration(cfg, factory, results_dir, "smoke")
     except FatalAPIError as exc:
