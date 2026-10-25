@@ -107,6 +107,40 @@ def read_bids(run_dir) -> pd.DataFrame:
     return out
 
 
+_TRUTH_INT_COLUMNS = ("project_id", "seat", "is_cartel")
+_TRUTH_STR_COLUMNS = ("run_id", "firm_id", "cartel_role", "scheme")
+_PAIR_STATS_INT_COLUMNS = ("usable_T", "primary", "n_joint", "a1_flag", "a3_flag", "a3_df_num", "rank_u",
+                           "complete")
+_PAIR_STATS_STR_COLUMNS = ("run_id", "spec", "firm_i", "firm_j", "a1_reason", "not_identified")
+
+
+def _typed_frame(path, str_columns, int_columns, nullable_int: bool) -> pd.DataFrame:
+    raw = pd.read_csv(path, dtype=str, keep_default_na=False, encoding="utf-8")
+    out = pd.DataFrame(index=raw.index)
+    for col in raw.columns:
+        s = raw[col]
+        if col in str_columns:
+            out[col] = s
+        elif col in int_columns:
+            out[col] = (pd.to_numeric(s.replace("", np.nan)).astype("Int64") if nullable_int
+                        else s.astype("int64"))
+        else:
+            out[col] = pd.to_numeric(s.replace("", np.nan)).astype("float64")
+    return out
+
+
+def read_truth(run_dir) -> pd.DataFrame:
+    """Read ``truth.csv``: project_id/seat/is_cartel as int, text columns as str (a role "none" stays
+    the string "none"), the rest float."""
+    return _typed_frame(Path(run_dir) / "truth.csv", _TRUTH_STR_COLUMNS, _TRUTH_INT_COLUMNS, False)
+
+
+def read_pair_stats(path) -> pd.DataFrame:
+    """Read a ``pair_stats.csv``: integer columns as nullable Int64, text columns as str (empty stays
+    ""), statistics as float (NaN where the field is empty: missing, never zero)."""
+    return _typed_frame(path, _PAIR_STATS_STR_COLUMNS, _PAIR_STATS_INT_COLUMNS, True)
+
+
 # ---------------------------------------------------------------- JSON helpers
 
 def _atomic_write_text(path: Path, text: str) -> None:

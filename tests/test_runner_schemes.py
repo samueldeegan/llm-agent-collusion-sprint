@@ -196,6 +196,24 @@ def test_end_to_end_synthetic_each_scheme_detector(scheme_runs):
     assert row["primary"].iloc[0] == 1 and row["complete"].iloc[0] == 1
 
 
+def test_end_to_end_synthetic_each_scheme_fidelity(scheme_runs):
+    """Execution fidelity (spec A74, A75) of the seed-1 synthetic scheme runs, from bids.csv and
+    truth.csv: the scripted cover and rotation rules always execute; markup executes on most projects."""
+    from src.procurement.fidelity import fidelity, project_executed_flags
+    got = {}
+    for scheme, d in scheme_runs.items():
+        bids = io.read_bids(d)
+        truth = io.read_truth(d)
+        a, b = SEATS_SEED1[scheme]
+        pair = (ENV1.names[a], ENV1.names[b])
+        flags = project_executed_flags(bids, truth, pair, scheme)
+        assert list(flags.index) == list(range(1, 111))
+        got[scheme] = fidelity(bids, truth, pair, scheme)
+        assert got[scheme] == flags.sum() / 110
+    assert got["cover"] == 1.0 and got["rotation"] == 1.0
+    assert got["markup"] >= 0.75
+
+
 # ------------------------------------------------------------------ equivalence with the simulator
 
 @pytest.mark.parametrize("cfg", [
