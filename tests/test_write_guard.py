@@ -17,7 +17,7 @@ def test_write_open_refused(rel):
 def test_decisions_md_protected_without_opening_it(tmp_path, monkeypatch):
     import importlib
     conftest = importlib.import_module("tests.conftest")
-    decisions = REPO_ROOT / "docs" / "superpowers" / "DECISIONS.md"
+    decisions = REPO_ROOT / "docs" / "DECISIONS.md"
     assert conftest._is_protected(decisions)          # predicate only; the file is never opened
     stand_in = tmp_path / "DECISIONS.md"
     stand_in.write_text("x", encoding="utf-8")

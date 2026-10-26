@@ -1,4 +1,4 @@
-"""Calibration behind the spec §6 thresholds (docs/superpowers/specs/2026-10-25-bajari-ye-procurement-design.md).
+"""Calibration behind the spec §6 thresholds (docs/round1/design-spec.md).
 beta1=0.08, sigma_eps=0.05, T=110 (10 burn-in, 100 usable), 100 seeds. Pure numpy/scipy, no API.
 Run: python scripts/calibration/calib_spec_thresholds.py scripts/calibration/calib_spec_thresholds.json
 The scheme overwrite is applied in-loop (before each project award) with cartel seats (0, 1).

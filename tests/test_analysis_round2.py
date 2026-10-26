@@ -26,11 +26,11 @@ def built(tmp_path_factory):
             cfg = RunConfig(condition="control", seed=s, T=110, burn_in=10, arm=arm, bidder="synthetic",
                             memory_window=0 if arm == "mem0" else 10, scratchpad_enabled=arm == "base")
             runner.run(cfg, runner.bidder_factory_for(cfg), results_root=root)
-    zip_path = base / "results" / "archive" / "round2_wave1_transcripts.zip"
+    zip_path = base / "results" / "round2" / "round2_wave1_transcripts.zip"
     zip_path.parent.mkdir(parents=True)
     zip_path.write_bytes(b"PK\x05\x06" + b"\x00" * 18)
     archives = ar2.archive_entries(zip_path.parent)
-    out = ar2.analyze_round2(root, base / "results" / "analysis" / "a1", archives=archives,
+    out = ar2.analyze_round2(root, base / "results" / "round2" / "analysis" / "a1", archives=archives,
                              include_synthetic=True)
     return dict(root=root, out=out, base=base)
 
@@ -40,7 +40,7 @@ def test_analyze_round2_writes_every_file(built):
     for name in OUT_FILES:
         assert (out / name).is_file(), name
     assert (out / "ablation_2x2.png").stat().st_size > 0
-    readme = built["root"].parent / "README_round2.md"
+    readme = built["root"].parent / "round2" / "README_round2.md"
     assert readme.is_file()
     a, b = readme.read_text(encoding="utf-8"), (out / "README.md").read_text(encoding="utf-8")
     assert "](analysis/a1/ablation_2x2.png)" in a and "](ablation_2x2.png)" in b
@@ -94,7 +94,7 @@ def test_paired_by_seed_csv_rows(built):
 
 
 def test_readme_round2(built):
-    text = (built["root"].parent / "README_round2.md").read_text(encoding="utf-8")
+    text = (built["root"].parent / "round2" / "README_round2.md").read_text(encoding="utf-8")
     assert text.startswith("# Round 2")
     head = text.split("\n## ")[0]
     for arm in TEST_ARMS:
@@ -240,7 +240,7 @@ def test_bid_price_stats_excludes_placeholders():
 
 
 def test_readme_price_columns_and_summary(built):
-    text = (built["root"].parent / "README_round2.md").read_text(encoding="utf-8")
+    text = (built["root"].parent / "round2" / "README_round2.md").read_text(encoding="utf-8")
     assert "mean bid/EST, non-sentinel bids" in text and "sentinel/no-bid share" in text
     assert "| mean bid/EST |" not in text
     inv = ar2._inventory(pd.read_csv(built["out"] / "evaluation" / "run_eval.csv"), built["root"])
@@ -258,7 +258,7 @@ def test_cosmetics():
 def test_spend_scope_and_wins_and_cli_note(built, tmp_path, capsys):
     scope = ar2.spend_summary(built["root"])["scope"]
     assert scope == "`runs/` and `calibration_runs/` (both relative to `results/`)"
-    text = (built["root"].parent / "README_round2.md").read_text(encoding="utf-8")
+    text = (built["root"].parent / "round2" / "README_round2.md").read_text(encoding="utf-8")
     assert "18.000" not in text and ".000 |" not in text.split("Per-arm medians")[1].split("<details>")[0].split("wins")[1]
     out = tmp_path / "an"
     arch = tmp_path / "arch"

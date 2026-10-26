@@ -958,7 +958,7 @@ def main(argv=None, *, clock: Clock | None = None, sleep: Callable[[float], None
     ap.add_argument("--results-root", default=DEFAULT_RESULTS_ROOT)
     ap.add_argument("--frozen", default="config/frozen.json")
     ap.add_argument("--calibration", default=None, help="default: <results>/calibration.json")
-    ap.add_argument("--decisions", default="docs/superpowers/DECISIONS.md")
+    ap.add_argument("--decisions", default="docs/DECISIONS.md")
     ap.add_argument("--bidder", default="llm", choices=("llm", "synthetic"),
                     help="synthetic is refused in a real launch into results/runs")
     ap.add_argument("--stagger-s", type=float, default=5.0)

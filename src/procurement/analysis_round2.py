@@ -1,5 +1,5 @@
 """Round-2 analysis: per-arm tables, the paired-by-seed test, the ablation figure and
-``results/README_round2.md`` (round-2 brief §2.5 items 1-9 and §5.5).
+``results/round2/README_round2.md`` (round-2 brief §2.5 items 1-9 and §5.5).
 
 ``analyze_round2(results_root, out_dir)`` runs ``evaluation.evaluate`` (into ``<out_dir>/evaluation/``),
 keeps the control runs only (the round-1 scheme runs are not round-2 material) and writes into
@@ -8,7 +8,7 @@ keeps the control runs only (the round-1 scheme runs are not round-2 material) a
 ``slope_dispersion_by_arm.csv``, ``synthetic_floors.csv`` (base arm's complete control runs),
 ``paired_by_seed.csv``, ``flag_rates_at_base_threshold.csv`` (non-base arms at the base arm's p95,
 out-of-sample), ``ablation_2x2.png`` and ``README.md``; the same README is written to
-``results_root.parent / "README_round2.md"`` (the two differ only in the figure link, relative to each). Every run OVERWRITES ``README_round2.md``;
+``results_root.parent / "round2" / "README_round2.md"`` (the two differ only in the figure link, relative to each). Every run OVERWRITES ``README_round2.md``;
 the analysis directory itself is always new (a non-empty one is refused).
 
 Reads: what ``evaluation.evaluate`` reads, plus each selected control run's ``bids.csv``, ``truth.csv``
@@ -16,8 +16,8 @@ and ``run_meta.json`` (regimes, slope dispersion, floors) and, for the spend, ev
 ``results_root`` and its sibling ``calibration_runs/``. Never transcripts or checkpoints.
 
 CLI: ``python -m src.procurement.analysis_round2 [--results-root results/runs] [--out DIR]
-[--archives results/archive] [--include-synthetic] [--frozen config/frozen.json]`` (relative paths
-resolve against the repository root). Each run overwrites ``results/README_round2.md``; the CLI prints that.
+[--archives results/round2] [--include-synthetic] [--frozen config/frozen.json]`` (relative paths
+resolve against the repository root). Each run overwrites ``results/round2/README_round2.md``; the CLI prints that.
 """
 from __future__ import annotations
 
@@ -47,7 +47,8 @@ CONTROL = "control"
 SUMMARY_SPEC = "tag_filtered"
 FP_T_SPECS = ("tag", "tag_filtered")
 TESTS = ("A1", "A3")
-ANALYSIS_ROOT = analysis.ANALYSIS_ROOT
+ANALYSIS_ROOT = "results/round2/analysis"
+ROUND_DIR = "round2"
 README_NAME = "README_round2.md"
 
 FLAG_COLUMNS = ["arm"] + analysis.FLAG_RATES_COLUMNS
@@ -716,7 +717,7 @@ def write_readme_round2(path, *, inventory: pd.DataFrame, flags: pd.DataFrame, n
           "- Synthetic floors are computed on the base runs' truth tables; only `won` is recomputed from the new "
           "bids, the CAP path (and DIST) stay as in the real bid table (CAP is not recomputed).",
           "- Only control runs enter this report; the round-1 scheme runs (cover, markup, rotation) are in "
-          "`results/README.md`.",
+          "`results/round1/README_round1.md`.",
           f"- {ROUND1_LOSS_NOTE}",
           f"- {SMOKE_SPEND_NOTE}",
           ""]
@@ -802,7 +803,7 @@ def _inventory(run_eval: pd.DataFrame, results_root=None) -> pd.DataFrame:
 def analyze_round2(results_root, out_dir, *, archives: list[dict] | None = None, spend: dict | None = None,
                    frozen_path=None, include_synthetic: bool = False) -> Path:
     """Evaluate ``results_root`` and write the round-2 files (module docstring) into ``out_dir`` (new or
-    empty; a non-empty one is refused) and ``results_root.parent / "README_round2.md"``. Returns
+    empty; a non-empty one is refused) and ``results_root.parent / "round2" / "README_round2.md"``. Returns
     ``out_dir``. Each run overwrites ``README_round2.md``; the analysis directory itself is always new. ``include_synthetic`` and ``frozen_path`` select runs as in ``evaluation.evaluate``;
     ``spend`` defaults to ``spend_summary(results_root)``."""
     results_root, out_dir = Path(results_root), Path(out_dir)
@@ -872,18 +873,19 @@ def analyze_round2(results_root, out_dir, *, archives: list[dict] | None = None,
               archives=list(archives or []), spend=spend if spend is not None else spend_summary(results_root),
               analysis_dir=out_dir, at_base=at_base, now_utc=datetime.now(timezone.utc))
     # same text twice; only the figure link differs (relative to each file's own directory)
-    write_readme_round2(results_root.parent / README_NAME, **kw)
+    (results_root.parent / ROUND_DIR).mkdir(parents=True, exist_ok=True)
+    write_readme_round2(results_root.parent / ROUND_DIR / README_NAME, **kw)
     write_readme_round2(out_dir / "README.md", **kw)
     return out_dir
 
 
 def main(argv=None) -> Path:
     ap = argparse.ArgumentParser(prog="python -m src.procurement.analysis_round2",
-                                 description="Round-2 ablation tables, figure and results/README_round2.md")
+                                 description="Round-2 ablation tables, figure and results/round2/README_round2.md")
     ap.add_argument("--results-root", type=Path, default=Path("results/runs"))
-    ap.add_argument("--out", type=Path, default=None, help="output directory (default: a new results/analysis/<UTC>)")
-    ap.add_argument("--archives", type=Path, default=Path("results/archive"),
-                    help="directory of transcript zips to list (default results/archive)")
+    ap.add_argument("--out", type=Path, default=None, help="output directory (default: a new results/round2/analysis/<UTC>)")
+    ap.add_argument("--archives", type=Path, default=Path("results/round2"),
+                    help="directory of transcript zips to list (default results/round2)")
     ap.add_argument("--include-synthetic", action="store_true", help="also evaluate runs whose bidder is not llm")
     ap.add_argument("--frozen", type=Path, default=Path(evaluation.DEFAULT_FROZEN),
                     help="only runs at these cost parameters, when the file exists (default config/frozen.json)")
@@ -892,8 +894,8 @@ def main(argv=None) -> Path:
     out = config.repo_path(args.out) if args.out is not None else evaluation.new_out_dir(config.repo_path(ANALYSIS_ROOT))
     analyze_round2(root, out, archives=archive_entries(config.repo_path(args.archives)),
                    frozen_path=config.repo_path(args.frozen), include_synthetic=args.include_synthetic)
-    print(f"round-2 analysis -> {out}; README -> {root.parent / README_NAME}")
-    print(f"note: each run overwrites {root.parent / README_NAME}; the analysis directory itself is always new")
+    print(f"round-2 analysis -> {out}; README -> {root.parent / ROUND_DIR / README_NAME}")
+    print(f"note: each run overwrites {root.parent / ROUND_DIR / README_NAME}; the analysis directory itself is always new")
     return out
 
 

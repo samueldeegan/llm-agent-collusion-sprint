@@ -1,4 +1,4 @@
-"""Analysis: the paper's tables, the control-distribution figure and ``results/README.md`` (spec §4g
+"""Analysis: the paper's tables, the control-distribution figure and ``results/round1/README_round1.md`` (spec §4g
 "Analysis output", §4h "Empirical-null thresholds" and "Outputs", A78).
 
 ``analyze(results_root, out_dir, scripted_csv)`` runs ``evaluation.evaluate`` itself (into
@@ -10,7 +10,8 @@
 - ``power_vs_T.csv``: tag spec, every usable_T reached, incomplete runs included;
 - ``robustness.csv``: the project-FE rows of the flag-rate table plus ``scripted_signatures.csv`` verbatim;
 - ``control_distributions.png``: |z| and F of control pairs with the scheme runs' cartel pairs marked;
-- ``README.md``, also written to ``results_root.parent / "README.md"`` (``results/README.md``).
+- ``README.md``, also written to ``results_root.parent / "round1" / "README_round1.md"``
+  (``results/round1/README_round1.md``).
 
 Reads: ``pair_stats.csv``, ``truth.csv``, ``bids.csv``, ``run_meta.json`` (through evaluation and the
 detector), ``excluded_runs.json``, ``scripted_signatures.csv``, ``results/calibration.json``,
@@ -50,7 +51,9 @@ ROBUSTNESS_COLUMNS = ["source", "condition", "spec", "rho0", "threshold", "row",
                       "serious_add", "sigma_eps", "pair_class", "test", "n_pairs", "n_flagged", "n", "rate",
                       "ci_low", "ci_high", "n_runs", "in_sample", "mean_r", "top2", "rank1"]
 SCRIPTED_NAME = "scripted_signatures.csv"
-ANALYSIS_ROOT = "results/analysis"
+ANALYSIS_ROOT = "results/round1/analysis"
+ROUND_DIR = "round1"
+README_NAME = "README_round1.md"
 CARTEL_MARGIN_COLUMNS = ["run_id", "scheme", "seed", "cartel_margin_scheme", "cartel_margin_control",
                          "outsider_margin_scheme", "cartel_wins_scheme", "cartel_wins_control",
                          "cartel_profit_scheme", "cartel_profit_control"]
@@ -523,7 +526,7 @@ def readme_numbers(*, pair_eval: pd.DataFrame, run_eval: pd.DataFrame, flags: pd
     # ---- run inventory
     L += ["## Run inventory", ""]
     if other_arms:
-        L += ["Other arms (see README_round2.md): "
+        L += ["Other arms (see ../round2/README_round2.md): "
               + ", ".join(f"{a} ({n} run{'s' if n != 1 else ''})" for a, n in sorted(other_arms.items())), ""]
     re_ = run_eval if run_eval is not None else pd.DataFrame(columns=evaluation.RUN_EVAL_COLUMNS)
     if len(re_):
@@ -954,7 +957,7 @@ def missing_runs(results_root, stop_json: dict | None, plan: dict | None) -> lis
 def analyze(results_root, out_dir, scripted_csv=None, *, include_synthetic: bool = False, frozen_path=None,
             plan_path=None) -> Path:
     """Evaluate ``results_root`` and write every §4g analysis file into ``out_dir`` (which must be new or
-    empty) plus ``results_root.parent / "README.md"``. Returns ``out_dir``. ``include_synthetic``,
+    empty) plus ``results_root.parent / "round1" / "README_round1.md"``. Returns ``out_dir``. ``include_synthetic``,
     ``frozen_path`` and ``plan_path`` select runs as in ``evaluation.evaluate``; ``plan_path`` also
     lists the planned runs without a directory."""
     results_root, out_dir = Path(results_root), Path(out_dir)
@@ -1013,16 +1016,17 @@ def analyze(results_root, out_dir, scripted_csv=None, *, include_synthetic: bool
                           stop_reasons=stop_reasons, missing_runs=absent, input_notes=input_notes,
                           calibration_problem=cal_problem, other_arms=other_arms,
                           margins=margins, margin_summary=margin_summary)
-    for path in (out_dir / "README.md", results_root.parent / "README.md"):
+    (results_root.parent / ROUND_DIR).mkdir(parents=True, exist_ok=True)
+    for path in (out_dir / "README.md", results_root.parent / ROUND_DIR / README_NAME):
         path.write_text(text, encoding="utf-8", newline="\n")
     return out_dir
 
 
 def main(argv=None) -> Path:
     ap = argparse.ArgumentParser(prog="python -m src.procurement.analysis",
-                                 description="Tables, figure and results/README.md from the experiment runs")
+                                 description="Tables, figure and results/round1/README_round1.md from the experiment runs")
     ap.add_argument("--results-root", type=Path, default=Path("results/runs"))
-    ap.add_argument("--out", type=Path, default=None, help="output directory (default: a new results/analysis/<UTC>)")
+    ap.add_argument("--out", type=Path, default=None, help="output directory (default: a new results/round1/analysis/<UTC>)")
     ap.add_argument("--scripted-csv", type=Path, default=None, help=f"{SCRIPTED_NAME} from python -m "
                                                                     "src.procurement.scripted")
     evaluation.add_selection_args(ap)
@@ -1032,7 +1036,7 @@ def main(argv=None) -> Path:
     analyze(root, out, scripted_csv=None if args.scripted_csv is None else config.repo_path(args.scripted_csv),
             include_synthetic=args.include_synthetic, frozen_path=config.repo_path(args.frozen),
             plan_path=config.repo_path(args.plan))
-    print(f"analysis -> {out}; README -> {root.parent / 'README.md'}")
+    print(f"analysis -> {out}; README -> {root.parent / ROUND_DIR / README_NAME}")
     return out
 
 

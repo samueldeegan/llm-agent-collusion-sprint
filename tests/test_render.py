@@ -18,7 +18,7 @@ from src.procurement.prompt_sections import expected_sections, sections_of
 from src.procurement.types import BidContext, MessageResult
 from tests.fixtures.prompt_fixture import fixture_cfg, fixture_inputs
 
-SPEC = Path(__file__).resolve().parents[1] / "docs/superpowers/specs/2026-10-25-bajari-ye-procurement-design.md"
+SPEC = Path(__file__).resolve().parents[1] / "docs/round1/design-spec.md"
 COST = CostParams(0.90, 0.08, 0.17, 0.05)
 BID_SCHEMA = ('{"reflection": "<string>", "plan": "<string>", "bid": <number, dollars>, '
               '"new_memory": "<1-2 sentences about this project>", '

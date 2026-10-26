@@ -2,7 +2,7 @@
 step 6): up to three 20-project control runs on Haiku, 120 calls each.
 
     .venv\\Scripts\\python.exe scripts\\pilot.py [--results-dir results] [--config-dir config]
-        [--decisions docs/superpowers/DECISIONS.md]
+        [--decisions docs/DECISIONS.md]
 
 Each pilot runs at the current beta0 (the first at config/defaults.json's 0.90); m = mean bid/EST over the
 present bids of projects 11-20. m in [1.00, 1.10] freezes beta0; else beta0 <- beta0 - (m - 1.05) and the
@@ -75,7 +75,7 @@ def main(argv=None, *, bidder_factory=None, transport=None) -> int:
     ap.add_argument("--results-dir", default="results",
                     help="parent of calibration_runs/ and calibration.json (default: results)")
     ap.add_argument("--config-dir", default="config", help="where frozen.json is written (default: config)")
-    ap.add_argument("--decisions", default="docs/superpowers/DECISIONS.md", help="decisions log to append to")
+    ap.add_argument("--decisions", default="docs/DECISIONS.md", help="decisions log to append to")
     args = ap.parse_args(argv)
 
     var = calibration.missing_key(1)

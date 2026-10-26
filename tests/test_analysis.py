@@ -246,7 +246,7 @@ def test_power_vs_T_and_robustness_tables(fx):
 def test_readme(fx):
     out, base = fx["out"], fx["base"]
     text = (out / "README.md").read_text(encoding="utf-8")
-    assert (base / "results" / "README.md").read_text(encoding="utf-8") == text
+    assert (base / "results" / "round1" / "README_round1.md").read_text(encoding="utf-8") == text
     for heading in ("## Run inventory", "## Flag rates (tag spec)", "## Control distributions",
                     "## Mixed-pair A3 per scheme", "## Top-2 verdicts", "## Per-run results",
                     "## Refusal", "## Seed-matched cartel-seat margins", "## Power vs T", "## Robustness",
@@ -672,8 +672,8 @@ def test_analysis_cli_paths_resolve_against_repo_root(fx, tmp_path, monkeypatch)
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
     main(["--results-root", "results/runs", "--include-synthetic", "--frozen", "none.json", "--plan", "none.json"])
-    (made,) = list((fake_repo / "results" / "analysis").iterdir())
-    assert (made / "flag_rates.csv").is_file() and (fake_repo / "results" / "README.md").is_file()
+    (made,) = list((fake_repo / "results" / "round1" / "analysis").iterdir())
+    assert (made / "flag_rates.csv").is_file() and (fake_repo / "results" / "round1" / "README_round1.md").is_file()
     assert not (elsewhere / "results").exists()
 
 
@@ -688,7 +688,7 @@ def test_round1_analysis_ignores_other_arms(fx, tmp_path):
     for name in ("flag_rates.csv", "empirical_null.csv", "power_vs_T.csv"):
         assert (out / name).read_text(encoding="utf-8") == (fx["out"] / name).read_text(encoding="utf-8"), name
     readme = (out / "README.md").read_text(encoding="utf-8")
-    assert "Other arms (see README_round2.md): mem0 (1 run)" in readme
+    assert "Other arms (see ../round2/README_round2.md): mem0 (1 run)" in readme
     assert "control_mem0_s1" not in readme
 
 

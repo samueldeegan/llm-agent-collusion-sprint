@@ -51,7 +51,7 @@ def repo_root() -> Path:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 _PROTECTED_DIRS = (REPO_ROOT / "results", REPO_ROOT / "config")
-_PROTECTED_FILES = (REPO_ROOT / "docs" / "superpowers" / "DECISIONS.md",)
+_PROTECTED_FILES = (REPO_ROOT / "docs" / "DECISIONS.md",)
 
 
 def _is_protected(p) -> bool:

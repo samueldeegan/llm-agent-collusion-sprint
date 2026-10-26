@@ -23,7 +23,15 @@ and a scripted instruction (cover, markup, rotation); the control has none. A re
 - `detector.py`: Bajari-Ye detector, writes `detector/pair_stats.csv`.
 - `fidelity.py`: execution fidelity, realized cover rule, margins, cartel profit (ground truth).
 - `evaluation.py`: joins `pair_stats` with ground truth; writes `pair_eval.csv`, `run_eval.csv`.
-- `analysis.py`: paper tables, control-distribution figure, `results/analysis/<UTC>/`.
+- `analysis.py`: round-1 tables, control-distribution figure, `results/round1/analysis/<UTC>/` and
+  `results/round1/README_round1.md`.
+- `analysis_round2.py`: round-2 per-arm tables, paired-by-seed test, ablation figure,
+  `results/round2/analysis/<UTC>/` and `results/round2/README_round2.md`.
+- `regimes.py`: classifies each firm-season's bidding style (passer, fat, shade, razor, moderate).
+- `floors.py`: synthetic rational bidders (smooth and kinked shading) on real truth tables; the A1/A3
+  false-positive floors.
+- `prompt_sections.py`: checks which prompt sections an arm's rendered prompt must and must not contain.
+- `archive.py`: zips run transcripts (used by `scripts/archive_transcripts.py`).
 - `calibration.py`: shared plumbing of the hand-run scripts (`results/calibration.json`).
 - `launcher.py`: one OS process per run, monitor loop, spend guard, STOP, time ladder.
 - `pilot.py`: pilot support code used by `scripts/pilot.py`.
@@ -32,7 +40,7 @@ and a scripted instruction (cover, markup, rotation); the control has none. A re
 
     .venv\Scripts\python.exe -m pytest tests -q
 
-About 443 tests, roughly 220 s. The suite makes zero API calls: the client transport is injected, and
+About 540 tests, roughly 330 s. The suite makes zero API calls: the client transport is injected, and
 no test constructs a real SDK client. `pytest.ini` defines a `slow` marker for the long known-answer
 tests; they run by default. Skip them with `-m "not slow"`, run only them with `-m slow`.
 
@@ -61,7 +69,7 @@ Keys are read from the environment only. Step order matters.
    projects 11-20 is in [1.00, 1.10]. The pilot runs at k_frac = 0.25 x 110 / 20 = 1.375 so that CAP
    grows per project as in the 110-project experiment (recorded as `k_frac` in the `pilot` section and in
    `frozen.json`'s `pilot_history`; the experiment keeps 0.25). Writes `config/frozen.json`, appends a line to
-   `docs/superpowers/DECISIONS.md`, writes the `pilot` section. Exit 0: frozen. 3: STOP (parse rate
+   `docs/DECISIONS.md`, writes the `pilot` section. Exit 0: frozen. 3: STOP (parse rate
    < 0.95, or frozen m outside [0.95, 1.15]; no `frozen.json`). 5: bad key, `frozen.json` exists, or
    `calibration.json` is unreadable.
 4. Cover smoke, postfreeze (80 calls):
@@ -77,6 +85,16 @@ Keys are read from the environment only. Step order matters.
    Slot 1 uses `ANTHROPIC_API_KEY`, slot 2 uses `ANTHROPIC_API_KEY_2` if set. Writes `limits` and
    `tier_check_utc` to `calibration.json`. Exit 0: proceed. 4: a header is missing or a transient
    error (limits not updated, earlier good values kept; rerun). 5: key invalid for a slot.
+
+## Round-2 scripts
+
+- `scripts\arm_smoke.py --arm ARM` (18 calls): one short control run under `results/calibration_runs/`
+  for one ablation arm (`mem0`, `stateless`, `hidden`, `stateless_hidden`); records `round2_smokes[ARM]`
+  in `calibration.json`. Exit 0: 18/18 bids parsed.
+- `scripts\archive_transcripts.py --wave WAVE`: zips the transcripts and checkpoints of a wave's runs
+  (read-only on the run directories).
+- `scripts\capture_prompt_fixture.py`: regenerates `tests/fixtures/base_prompt_*.txt`, the byte-exact
+  base prompt the round-2 prompt flags are tested against.
 
 ## Launching the experiment
 
@@ -125,9 +143,12 @@ project does not stop the run: its table is complete, so it finishes (exit 0, `f
 
     .venv\Scripts\python.exe -m src.procurement.analysis --results-root results/runs [--out DIR] [--scripted-csv PATH]
 
-Runs evaluation, then writes the tables, figure and `README.md` into a new `results/analysis/<UTC>/`
-(or `--out`). The same `README.md` is also written to `results/README.md`, in the parent of
-`--results-root`. Relative paths (here and in `python -m src.procurement.evaluation` and `scripted`)
+Runs evaluation, then writes the tables, figure and `README.md` into a new `results/round1/analysis/<UTC>/`
+(or `--out`). The same `README.md` is also written to `results/round1/README_round1.md` (`round1/`
+under the parent of `--results-root`). The round-2 counterpart,
+`python -m src.procurement.analysis_round2 --results-root results/runs [--out DIR] [--archives DIR]`,
+keeps the control runs of every arm (round 2's `base` arm is the round-1 controls) and writes
+`results/round2/analysis/<UTC>/` and `results/round2/README_round2.md`. Relative paths (here and in `python -m src.procurement.evaluation` and `scripted`)
 resolve against the repository root. Evaluation takes LLM runs only (`--include-synthetic` adds the
 others; tests), and, when `config/frozen.json` and `config/run_plan.json` exist (`--frozen`, `--plan`),
 only runs at the frozen cost and the plan's T (or the ladder's 80). Every directory not used is listed
@@ -146,8 +167,10 @@ DIR` (on an unfinished run it computes in memory and writes nothing). Scripted r
 - `results/runs/`: experiment runs (one directory each).
 - `results/calibration_runs/`: smoke, cover smoke and pilot runs.
 - `results/launches/<UTC>/`: per launch manifest, configs, announce files, logs, `status.json`.
-- `results/analysis/<UTC>/`: analysis output and `scripted_signatures.csv`.
-- `results/README.md`: copy of the latest analysis README (written by the analysis).
+- `results/round1/analysis/<UTC>/` and `results/round2/analysis/<UTC>/`: analysis output per round.
+- `results/round1/README_round1.md`, `results/round2/README_round2.md`: copies of the latest analysis
+  README of each round (written by the analysis).
+- `results/analysis/<UTC>/`: `scripted_signatures.csv` from the cover smokes.
 - `results/calibration.json`: one section per hand-run script.
 - `config/frozen.json`: cost parameters frozen by the pilot.
 - `results/STOP.json`: written when the launcher stops runs; an existing one is renamed
